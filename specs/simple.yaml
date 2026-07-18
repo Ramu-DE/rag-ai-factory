@@ -1,0 +1,30 @@
+name: simple_pipeline
+version: "1.0.0"
+description: "Baseline fixed-chunking + dense retrieval. Beginner pipeline."
+ingestion:
+  doc_path: "data/medicaid.pdf"
+  collection_name: "factory_simple"
+  chunker: fixed_chunking
+  use_incremental: false
+retrieval:
+  strategy: dense_retrieval
+  top_k: 5
+  rerank: false
+  compress: false
+query:
+  strategy: direct
+generation:
+  agentic_mode: none
+  streaming: false
+  use_cache: true
+  max_tokens: 1024
+  temperature: 0.1
+guards:
+  retrieval_guard: true
+  generation_guard: true
+  ambiguity_guard: false
+  system_guard: false
+temporal:
+  enabled: false
+evaluation:
+  enabled: false

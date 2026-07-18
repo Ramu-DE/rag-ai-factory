@@ -1,0 +1,33 @@
+name: production_pipeline
+version: "1.0.0"
+description: "Full Tier 1-7. Contextual chunking + hybrid RRF + rerank + self-RAG + all guards + Temporal."
+ingestion:
+  doc_path: "data/medicaid.pdf"
+  collection_name: "factory_production"
+  chunker: contextual_chunking
+  use_incremental: true
+retrieval:
+  strategy: hybrid_rrf_retrieval
+  top_k: 10
+  rerank: true
+  compress: true
+query:
+  strategy: decompose
+  max_sub_queries: 4
+generation:
+  agentic_mode: self_rag
+  streaming: false
+  use_cache: true
+  max_tokens: 2048
+  temperature: 0.1
+guards:
+  retrieval_guard: true
+  generation_guard: true
+  ambiguity_guard: true
+  system_guard: true
+temporal:
+  enabled: true
+  task_queue: rag-factory
+  workflow_id_prefix: prod-wf
+evaluation:
+  enabled: true

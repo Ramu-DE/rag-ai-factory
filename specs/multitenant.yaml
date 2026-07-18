@@ -1,0 +1,33 @@
+name: multitenant_pipeline
+version: "1.0.0"
+description: "Tier 9 isolation. Mandatory tenant_id on every query. System guard active."
+ingestion:
+  doc_path: "data/medicaid.pdf"
+  collection_name: "factory_mt"
+  chunker: fixed_chunking
+  use_incremental: true
+  tenant_id: "tenant_acme"
+retrieval:
+  strategy: multitenant_rag
+  top_k: 5
+  rerank: false
+  compress: false
+query:
+  strategy: direct
+generation:
+  agentic_mode: none
+  streaming: false
+  use_cache: true
+  max_tokens: 1024
+  temperature: 0.1
+guards:
+  retrieval_guard: false
+  generation_guard: true
+  ambiguity_guard: false
+  system_guard: true
+temporal:
+  enabled: true
+  task_queue: rag-factory
+  workflow_id_prefix: mt-wf
+evaluation:
+  enabled: false

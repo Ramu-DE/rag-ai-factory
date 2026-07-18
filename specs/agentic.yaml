@@ -1,0 +1,32 @@
+name: agentic_pipeline
+version: "1.0.0"
+description: "Iterative RAG with fusion retrieval + generation guard + Temporal durability."
+ingestion:
+  doc_path: "data/medicaid.pdf"
+  collection_name: "factory_agentic"
+  chunker: sentence_window_chunking
+  use_incremental: false
+retrieval:
+  strategy: fusion_retrieval
+  top_k: 8
+  rerank: true
+  compress: false
+query:
+  strategy: react
+generation:
+  agentic_mode: iterative_rag
+  streaming: false
+  use_cache: false
+  max_tokens: 4096
+  temperature: 0.2
+guards:
+  retrieval_guard: true
+  generation_guard: true
+  ambiguity_guard: true
+  system_guard: false
+temporal:
+  enabled: true
+  task_queue: rag-factory
+  workflow_id_prefix: agentic-wf
+evaluation:
+  enabled: true
