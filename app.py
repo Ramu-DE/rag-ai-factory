@@ -522,7 +522,7 @@ User Query
     +─── Dense Retrieval   [Titan V2 → Qdrant, tenant filter]
     +─── RetrievalGuard    [K-dilution, stale, vocab-gap]
     +─── SystemGuard       [injection drop, PII flag]
-    +─── LLM Generation    [Claude Sonnet 4.6]
+    +─── LLM Generation    [AWS Bedrock LLM]
     +─── GenerationGuard   [faithfulness score, lost-in-middle]
     |
     Answer  +  Guard log  +  RAGAS scores  +  Routing explanation
