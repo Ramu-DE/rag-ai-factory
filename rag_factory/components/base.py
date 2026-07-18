@@ -37,13 +37,20 @@ def get_bedrock_client():
     )
 
 
+_QDRANT_SINGLETON = None
+
 def get_qdrant_client():
+    global _QDRANT_SINGLETON
+    if _QDRANT_SINGLETON is not None:
+        return _QDRANT_SINGLETON
     from qdrant_client import QdrantClient
     url = os.getenv("QDRANT_URL", "")
     key = os.getenv("QDRANT_API_KEY", "")
     if url and key:
-        return QdrantClient(url=url, api_key=key, timeout=30)
-    return QdrantClient(":memory:")
+        _QDRANT_SINGLETON = QdrantClient(url=url, api_key=key, timeout=30)
+    else:
+        _QDRANT_SINGLETON = QdrantClient(":memory:")
+    return _QDRANT_SINGLETON
 
 
 def embed(text: str) -> List[float]:
