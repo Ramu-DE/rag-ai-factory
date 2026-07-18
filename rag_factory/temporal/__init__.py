@@ -168,17 +168,23 @@ if TEMPORAL_AVAILABLE:
         await worker.run()
 
 else:
-    # Graceful stub when temporalio is not installed
-    class IngestWorkflow:          pass   # noqa: E701
-    class AgenticQueryWorkflow:    pass   # noqa: E701
-    class ScheduledReindexWorkflow:pass   # noqa: E701
+    # Graceful stubs when temporalio is not installed
+    class IngestWorkflow:           pass   # noqa: E701
+    class AgenticQueryWorkflow:     pass   # noqa: E701
+    class ScheduledReindexWorkflow: pass   # noqa: E701
 
-    async def run_worker(*args, **kwargs):
-        raise ImportError("Install temporalio: pip install temporalio")
+    async def ingest_document(*a, **k):    raise ImportError("pip install temporalio")
+    async def retrieve_chunks(*a, **k):    raise ImportError("pip install temporalio")
+    async def generate_answer(*a, **k):    raise ImportError("pip install temporalio")
+    async def evaluate_response(*a, **k):  raise ImportError("pip install temporalio")
+    async def reindex_stale(*a, **k):      raise ImportError("pip install temporalio")
+    async def run_worker(*a, **k):         raise ImportError("pip install temporalio")
 
 
 __all__ = [
     "TEMPORAL_AVAILABLE",
     "IngestWorkflow", "AgenticQueryWorkflow", "ScheduledReindexWorkflow",
+    "ingest_document", "retrieve_chunks", "generate_answer",
+    "evaluate_response", "reindex_stale",
     "run_worker",
 ]

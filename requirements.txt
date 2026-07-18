@@ -9,5 +9,8 @@ fastapi>=0.110
 uvicorn[standard]>=0.29
 python-multipart>=0.0.9
 rich>=13.0
+streamlit>=1.35
+httpx>=0.27
+pandas>=2.0
 # Optional — install for Temporal workflow support
 # temporalio>=1.5
