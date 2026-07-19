@@ -68,7 +68,10 @@ _SUMMARY = re.compile(
     r"main (topic|finding|idea|point|theme|conclusion)|"
     r"key (finding|result|conclusion|outcome|insight)s?|"
     r"what (were|are|is) the (key|main|primary|top) (finding|result|conclusion|outcome|insight|point)s?|"
-    r"findings? of (this|the) (research|study|paper|report|document))\b", re.I
+    r"findings? of (this|the) (research|study|paper|report|document)|"
+    r"what (does|did) (the|this|a) (research|study|paper|report|document) (say|show|find|indicate|suggest|conclude)\b|"
+    r"research findings (on|about|regarding|for)\b|"
+    r"what (the )?(research|study|evidence|data|paper|report) (says?|shows?|indicates?|suggests?|concludes?)\b)\b", re.I
 )
 _TEMPORAL = re.compile(
     r"\b(latest|recent|new|updated|changed|since|after \d{4}|before \d{4}|"
