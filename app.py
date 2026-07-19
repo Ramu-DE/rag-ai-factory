@@ -198,9 +198,174 @@ def _list_specs():
 
 
 # ─── tabs ─────────────────────────────────────────────────────────────────────
-tab_pdf, tab_ask, tab_eval, tab_compare, tab_overview, tab_manifest = st.tabs([
-    "PDF Upload", "Ask (Smart Route)", "Evaluate", "Compare Specs", "Overview", "Manifest",
+tab_idp, tab_pdf, tab_ask, tab_eval, tab_compare, tab_overview, tab_manifest = st.tabs([
+    "IDP (Smart Extract)", "PDF Upload + RAG", "Ask (Smart Route)", "Evaluate", "Compare Specs", "Overview", "Manifest",
 ])
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# IDP — Intelligent Document Processing
+# ═══════════════════════════════════════════════════════════════════════════════
+with tab_idp:
+    st.header("Intelligent Document Processing")
+    st.caption(
+        "Upload any document — invoice, contract, medical record, ID, or custom. "
+        "The pipeline auto-classifies it, runs the right extraction skill, validates fields, "
+        "and indexes it for Q&A — all in one call."
+    )
+
+    col_idp1, col_idp2 = st.columns([2, 1])
+    with col_idp1:
+        idp_file = st.file_uploader(
+            "Drop any document (PDF, PNG, JPG, TIFF)",
+            type=["pdf","png","jpg","jpeg","tiff","tif"],
+            key="idp_upload",
+            label_visibility="collapsed",
+        )
+    with col_idp2:
+        idp_collection   = st.text_input("Collection", value="idp_documents", key="idp_coll")
+        doc_type_override = st.selectbox(
+            "Doc type override",
+            ["auto-detect", "invoice", "contract", "medical", "id_document", "report", "form", "other"],
+        )
+        idp_force = st.checkbox("Force full re-index", key="idp_force")
+
+    # Skill registry table
+    with st.expander("Available document skills"):
+        from rag_factory.skills.registry import list_skills
+        import pandas as pd
+        skill_rows = [{"Doc Type": dt, "Capability": desc} for dt, desc in list_skills().items()]
+        st.dataframe(pd.DataFrame(skill_rows), use_container_width=True, hide_index=True)
+
+    if idp_file is not None:
+        st.info(f"**{idp_file.name}** — {idp_file.size / 1024:.1f} KB")
+
+        if st.button("Process Document", type="primary", key="idp_btn"):
+            with st.spinner("Classifying → extracting → validating → indexing..."):
+                try:
+                    import tempfile, os
+                    suffix = os.path.splitext(idp_file.name)[1] or ".pdf"
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                        tmp.write(idp_file.getbuffer())
+                        tmp_path = tmp.name
+
+                    from rag_factory.idp_pipeline import IDPPipeline
+                    pipeline = IDPPipeline(
+                        collection_name=idp_collection,
+                        index_dir=INDEX_DIR,
+                        force_reindex=idp_force,
+                        tenant_id=tenant_id or None,
+                    )
+                    result = pipeline.process(
+                        file_path=tmp_path,
+                        doc_type_override=None if doc_type_override == "auto-detect" else doc_type_override,
+                    )
+                    os.unlink(tmp_path)
+
+                    # ── classification banner ─────────────────────────────
+                    cat_colors = {
+                        "invoice": "#2d6a4f", "contract": "#1e3a5f",
+                        "medical": "#7b2d8b", "id_document": "#b8660e",
+                    }
+                    color = cat_colors.get(result.doc_type, "#555")
+                    scan_label = "SCANNED (Textract OCR)" if result.is_scanned else "DIGITAL PDF (PyMuPDF)"
+                    st.markdown(
+                        f'<div style="background:{color}15;border-left:4px solid {color};'
+                        f'border-radius:6px;padding:10px 14px;font-family:monospace;">'
+                        f'<b>Doc type :</b> {result.doc_type.upper()} &nbsp;|&nbsp; '
+                        f'<b>Confidence :</b> {result.classification.confidence:.0%} &nbsp;|&nbsp; '
+                        f'<b>Method :</b> {scan_label}<br>'
+                        f'<b>Reason :</b> {result.classification.reason}'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
+
+                    # ── ingest metrics ────────────────────────────────────
+                    st.subheader("Incremental Ingest")
+                    ir = result.ingest_report
+                    c1,c2,c3,c4,c5 = st.columns(5)
+                    c1.metric("Pages",      ir.pages_total)
+                    c2.metric("Added",      ir.pages_added)
+                    c3.metric("Updated",    ir.pages_updated)
+                    c4.metric("Skipped",    ir.pages_skipped, help="Unchanged — zero embedding cost")
+                    c5.metric("Chunks",     ir.chunks_embedded)
+                    badge = "INCREMENTAL" if ir.incremental else "FULL INDEX"
+                    st.caption(f"[{badge}] {ir.elapsed_ms}ms | collection: {ir.collection_name}")
+
+                    # ── extracted fields ──────────────────────────────────
+                    if result.extraction:
+                        st.subheader("Extracted Fields")
+                        fields_df = pd.DataFrame(
+                            [{"Field": k, "Value": v} for k, v in result.extraction.fields.items()]
+                        )
+                        st.dataframe(fields_df, use_container_width=True, hide_index=True)
+
+                        if result.extraction.tables:
+                            st.subheader("Extracted Tables / Line Items")
+                            for i, row in enumerate(result.extraction.tables[:20]):
+                                with st.expander(f"Row {i+1}"):
+                                    st.json(row)
+
+                        conf = result.extraction.confidence
+                        conf_color = "normal" if conf >= 0.75 else "inverse"
+                        st.metric("Extraction confidence", f"{conf:.0%}",
+                                  delta="HIGH" if conf >= 0.75 else "LOW — review recommended",
+                                  delta_color=conf_color)
+
+                    # ── validation ────────────────────────────────────────
+                    if result.validation:
+                        st.subheader("Field Validation")
+                        vr = result.validation
+                        if vr.valid and not vr.warnings:
+                            st.success("All required fields present and valid.")
+                        else:
+                            for e in vr.errors:
+                                st.error(e)
+                            for w in vr.warnings:
+                                st.warning(w)
+
+                    # Store for Ask tab
+                    st.session_state["active_collection"] = idp_collection
+                    st.session_state["active_pdf"]        = idp_file.name
+
+                    st.success(f"Document indexed into `{idp_collection}` — switch to **Ask** tab to query it.")
+
+                except Exception as e:
+                    st.error(f"IDP pipeline failed: {e}")
+                    import traceback; st.code(traceback.format_exc())
+
+    # ── architecture explainer ────────────────────────────────────────────────
+    with st.expander("IDP Pipeline architecture"):
+        st.code("""
+Upload (PDF / PNG / JPG / TIFF)
+    |
+    +── DocumentClassifier (heuristic → LLM)
+    |       invoice / contract / medical / id_document / report / form
+    |
+    +── Extractor (auto-selects)
+    |       Digital PDF  → PyMuPDF (free, fast, structure-aware)
+    |       Scanned PDF  → Textract DetectText / AnalyzeDocument
+    |       Invoice PDF  → Textract AnalyzeExpense
+    |       ID document  → Textract AnalyzeID
+    |       Image file   → Textract always
+    |
+    +── Document Skill
+    |       InvoiceSkill   → vendor, date, total, line_items
+    |       ContractSkill  → parties, dates, clauses, obligations
+    |       MedicalSkill   → patient, provider, ICD-10, medications
+    |       IDCardSkill    → name, DOB, ID#, expiry
+    |       CustomSkill    → YAML-defined fields (no code needed)
+    |
+    +── FieldValidator
+    |       required fields, date format, amount format,
+    |       cross-field rules, confidence threshold
+    |
+    +── IncrementalPDFProcessor
+            per-page SHA-256 hash → skip unchanged
+            delete stale Qdrant chunks for changed pages
+            embed + upsert only changed pages
+            → ready for Q&A via Ask tab
+""", language="text")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
