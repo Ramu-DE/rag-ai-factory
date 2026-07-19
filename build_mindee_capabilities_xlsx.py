@@ -109,20 +109,20 @@ PLATFORM_OVERVIEW = [
      "Create bespoke extraction models by uploading a sample doc or describing the document type; AI Agent auto-generates a data schema.",
      "No ML expertise needed — AI scaffolds the schema in seconds.", "All plans"),
     ("Core", "Catalog Templates",
-     "17 pre-built model templates (invoice, receipt, passport, etc.) with standard fields ready to use or customise.",
-     "Zero setup time for common document types.", "All plans"),
-    ("Utility", "Auto-Crop",
-     "Detects and isolates individual document boundaries on a single scanned page, returning page index + polygon coordinates + class per region.",
-     "Handles batch scans where multiple docs appear on one page.", "Beta"),
-    ("Utility", "Auto-Split",
-     "Breaks multi-page PDFs into separate logical documents by detecting type boundaries; returns page ranges + category per segment.",
-     "Automates processing of mixed-document bundles.", "Beta"),
-    ("Utility", "Classification",
-     "Assigns a custom user-defined class to each document (single or multi-page); class names returned exactly as configured.",
-     "Routes documents to correct workflows automatically.", "Beta"),
-    ("Utility", "Raw Text / OCR",
-     "Extracts full text per page as a single string + word-level coordinates; supports almost all languages.",
-     "Feeds downstream NLP/RAG pipelines with positioned text.", "Beta"),
+     "14 pre-built extraction model templates (Invoice 26 fields, Receipt 17, Financial Document 32, Passport 12, Resume 13, International ID 13, Driver License 14, Business Card 8, US Healthcare Card 14, Boarding Pass 7, Bill of Lading 11, Nutrition Facts 15, Bank Statement 16, Payslip 20) ready to use or customise.",
+     "Zero setup time for common document types — exact field counts visible on platform.", "All plans"),
+    ("Utility", "Crop",
+     "Identify the borders of documents on each page and match each one to a category. Returns bounding polygon + user-defined class per detected region.",
+     "Handles batch scans where multiple docs appear on one page.", "Available"),
+    ("Utility", "Split",
+     "Break a multi-page source file into separate documents and associate a class to each one. Returns page ranges + user-defined category per segment.",
+     "Automates processing of mixed-document bundles.", "Available"),
+    ("Utility", "Classify",
+     "Automatically sort any image or scanned document based on your categories. Returns predicted class + confidence score.",
+     "Routes documents to correct workflows automatically.", "Available"),
+    ("Utility", "OCR (Raw Text)",
+     "Extract raw text from any image or scanned document with high precision. Returns full page text + word-level polygons.",
+     "Feeds downstream NLP/RAG pipelines with positioned text.", "Available"),
     ("Optional", "Confidence Score + Accuracy Boost",
      "Ensemble of models; consensus-based scoring returns Certain/High/Medium/Low per field with colour-coded automation signal.",
      "Safe full-automation for high-confidence fields; human review for Low.", "Add-on"),
@@ -165,11 +165,14 @@ PLATFORM_OVERVIEW = [
 ]
 
 MODELS_ALL = [
+    # Field counts verified from app.mindee.com/create-model UI (shown field + "See N more")
     # (Category, Model Name, Endpoint Slug, Doc Types, Field Count, Key Fields Summary)
+
+    # ── Pre-built: Finance ────────────────────────────────────────────────────────
     ("Finance", "Invoice",
      "mindee/invoices/v4",
      "Invoice, bill, purchase order",
-     "30+",
+     "26",   # UI: Supplier Name + See 25 more
      "supplier_name, invoice_number, date, due_date, total_amount, total_net, total_tax, "
      "line_items (description/qty/unit_price/total_price/product_code/tax), taxes (rate/base/amount), "
      "supplier_address, customer_address, billing_address, shipping_address, "
@@ -178,15 +181,15 @@ MODELS_ALL = [
     ("Finance", "Receipt",
      "mindee/receipt_ocrs/v5",
      "Expense receipt, credit card receipt",
-     "15+",
+     "17",   # UI: Supplier Name + See 16 more
      "supplier_name, supplier_address, supplier_phone_number, receipt_number, date, time, "
      "document_type, total_amount, total_net, total_tax, tips_gratuity, taxes, "
      "line_items, purchase_category, purchase_subcategory, locale"),
     ("Finance", "Financial Document",
      "mindee/financial_document/v1",
      "Invoice, receipt, credit note, payslip, quote, purchase order, statement",
-     "35+",
-     "Auto-detects document sub-type. All Invoice + Receipt fields combined: "
+     "32",   # UI: Supplier Name + See 31 more
+     "Auto-detects document sub-type. Union of Invoice + Receipt fields: "
      "supplier_name/phone/email/website, customer_name/id, invoice_number, document_number, "
      "date, due_date, payment_date, total_amount/net/tax, tip, line_items, taxes, "
      "customer_address, supplier_address, billing_address, shipping_address, "
@@ -195,62 +198,79 @@ MODELS_ALL = [
     ("Finance", "Bank Statement",
      "mindee/bank_account_details/v2",
      "Bank statements (all major banks)",
-     "16+",
+     "16",
      "account_holder_names, account_number, account_type, currency, "
      "statement_period_start, statement_period_end, statement_date, "
      "beginning_balance, ending_balance, total_credits, total_debits, "
      "daily_balances (date+amount list), transactions (date+description+amount list), "
      "bank_name, branch_code, bank_address, account_holder_address"),
-    ("Finance", "Payslip",
+    ("Finance", "Payslip (FR)",
      "mindee/payslip_fra/v3",
-     "French payslips (extensible)",
-     "20+",
+     "French payslips",
+     "20",
      "employee_name, employee_id, employee_address, company_name, company_address, "
      "pay_period, gross_salary, net_salary, total_deductions, "
      "pay_components (name/amount/base), social_security_number, payment_date"),
+
+    # ── Pre-built: Identity ───────────────────────────────────────────────────────
     ("Identity", "Passport",
      "mindee/passports/v1",
      "International passports (all countries)",
-     "14",
+     "12",   # UI: Given Names + See 11 more
      "given_names, surnames, date_of_birth, place_of_birth, passport_number, "
      "issuing_country, nationality, date_of_issue, date_of_expiry, sex, "
-     "mrz_line_1, mrz_line_2 | India extras: legal_guardian, spouse_name, "
-     "mother_name, prior_passport_number/date/location, file_number, address"),
-    ("Identity", "International ID Card",
+     "mrz_line_1, mrz_line_2"),
+    ("Identity", "International ID",
      "mindee/international_id/v1",
-     "National IDs, residence permits, driver licences, passports",
-     "13",
+     "National IDs, residence permits, passports, driver licences",
+     "13",   # UI: Given Names + See 12 more
      "given_names, surnames, date_of_birth, place_of_birth, nationality, sex, "
      "document_number, date_of_issue, date_of_expiry, authority, document_type, "
      "address (street/city/state/postal_code/country), mrz (line_1/line_2/line_3)"),
     ("Identity", "Driver's License",
      "mindee/us_driver_license/v1",
      "Driver licences worldwide",
-     "18",
-     "first_name, last_name, date_of_birth, place_of_birth, nationality, sex, "
+     "14",   # UI: First Name + See 13 more
+     "first_name, last_name, date_of_birth, place_of_birth, sex, "
      "document_id, issued_date, expiry_date, country_code, issuing_authority, "
-     "mrz, category (EU), street, city, state, postal_code, country"),
+     "mrz, category (EU driving categories A/B/C/D), street, city, state, postal_code"),
     ("Identity", "Business Card",
      "mindee/business_card/v1",
      "Printed and digital business cards",
      "8",
      "name, job_title, company, phone_numbers (array), "
      "emails (array), website, address, social_media (array)"),
+
+    # ── Pre-built: Healthcare ─────────────────────────────────────────────────────
     ("Healthcare", "US Healthcare Card",
      "mindee/us_healthcare_cards/v1",
-     "US health insurance cards",
-     "12",
+     "US health insurance member cards",
+     "14",
      "company_name, plan_name, member_name, member_id, issuer_80840, "
      "group_number, payer_id, dependents (array), "
      "rx_bin, rx_id, rx_grp, rx_pcn, "
      "copayments (service_name + service_fees array), enrollment_date"),
+
+    # ── Pre-built: HR ─────────────────────────────────────────────────────────────
+    ("HR", "Resume / CV",
+     "mindee/resume_and_cv/v1",
+     "Resumes and CVs (all formats)",
+     "13",   # UI: Name + Address + See 11 more
+     "name, address, phone_number, email, linkedin_profile, "
+     "education (school_name/degree/dates_attended/gpa/relevant_coursework array), "
+     "professional_history (company_name/job_title/dates_employed/responsibilities array), "
+     "skills (array), languages (name+proficiency array), "
+     "projects (name/description/technologies array), "
+     "awards_certifications (name+date array), summary, candidate_photo (object detection)"),
+
+    # ── Pre-built: Logistics ──────────────────────────────────────────────────────
     ("Logistics", "Boarding Pass",
      "mindee/barcode_reader/v1",
      "Airline boarding passes (print + digital)",
-     "7+",
+     "7",
      "passenger_name, flight_number, departure_date, boarding_time, "
      "departure_airport (name+IATA), destination_airport (name+IATA), "
-     "barcode (object detection) | Optional: seat_number, gate, booking_reference (PNR)"),
+     "booking_reference (PNR)"),
     ("Logistics", "Bill of Lading",
      "mindee/bill_of_lading/v1",
      "International shipping bills of lading",
@@ -260,50 +280,46 @@ MODELS_ALL = [
      "carrier (name/professional_number/SCAC), "
      "carrier_items (description/quantity/gross_weight/weight_unit/measurement/measurement_unit), "
      "port_of_loading, port_of_discharge, place_of_delivery, issue_date, departure_date"),
-    ("HR", "Resume / CV",
-     "mindee/resume_and_cv/v1",
-     "Resumes and CVs (all formats)",
-     "10+",
-     "name, address, phone_number, email, linkedin_profile, "
-     "education (school_name/degree/dates_attended/gpa/relevant_coursework array), "
-     "professional_history (company_name/job_title/dates_employed/responsibilities array), "
-     "skills (array), languages (name+proficiency array), "
-     "projects (name/description/technologies array), "
-     "awards_certifications (name+date array), summary, candidate_photo (object detection)"),
+
+    # ── Pre-built: Labels ─────────────────────────────────────────────────────────
     ("Labels", "Nutrition Facts",
      "mindee/nutrition_facts/v1",
      "US/EU nutrition facts labels",
-     "15+",
+     "15",
      "serving_size, servings_per_container, calories, "
      "total_fat/saturated_fat/trans_fat/cholesterol/sodium (amount+daily_value), "
      "total_carbohydrate/dietary_fiber/total_sugars/added_sugars (amount+daily_value), "
      "protein, vitamins (name+amount+daily_value array), ingredients"),
-    ("Utility", "Cropper (Auto-Crop)",
-     "mindee/cropper/v1",
-     "Any multi-document scanned page",
-     "N/A",
-     "Returns per-detected-region: page_index (0-based), "
-     "bounding_box (normalised polygon, clockwise from top-left), "
-     "classification (user-defined class). Model-specific: unique model_id, custom classes."),
-    ("Utility", "Multi-Doc Splitter",
-     "mindee/multi_receipts_detector/v1",
-     "Multi-page PDFs with mixed document types",
-     "N/A",
-     "Returns per-segment: page_start, page_end, category (user-defined class). "
-     "Class names returned exactly as defined. Optional OTHER class for unmatched docs."),
-    ("Utility", "Classifier",
-     "(custom model ID)",
-     "Any single document (multi-page OK)",
-     "N/A",
-     "Returns: predicted_class (one of your user-defined classes), confidence. "
-     "Classes preserved exactly (spaces + capitalisation). Immediate API update on class rename."),
-    ("Utility", "Raw Text OCR",
-     "(custom model ID)",
-     "Any document, almost all languages",
-     "N/A",
-     "Returns per page: full_text (entire page as string), "
-     "words (array of word + polygon + page_index). "
-     "Excludes: ancient scripts, Blackfoot, Cherokee, Inuktitut."),
+
+    # ── Document Utilities (custom) ───────────────────────────────────────────────
+    ("Utility — Crop",
+     "Crop",
+     "custom model ID",
+     "Any page containing multiple documents (batch scan, clustered photo)",
+     "—",
+     "Identify the borders of documents on each page and match each one to a category. "
+     "Returns per region: bounding_box (normalised polygon), category (user-defined class), page_index."),
+    ("Utility — Split",
+     "Split",
+     "custom model ID",
+     "Multi-page PDF/image containing several distinct documents",
+     "—",
+     "Break a multi-page source file into separate documents and associate a class to each one. "
+     "Returns per segment: page_start, page_end, category (user-defined class)."),
+    ("Utility — OCR",
+     "OCR",
+     "custom model ID",
+     "Any image or scanned document, almost all languages",
+     "—",
+     "Extract raw text from any image or scanned document with high precision. "
+     "Returns per page: full_text (string) + words (text + polygon + page_index array)."),
+    ("Utility — Classify",
+     "Classify",
+     "custom model ID",
+     "Any single or multi-page document",
+     "—",
+     "Automatically sort any image or scanned document based on your categories. "
+     "Returns: predicted_class (one of your defined categories) + confidence score."),
 ]
 
 FIELD_TYPES = [
@@ -563,16 +579,23 @@ def build_models(wb):
     ws = wb.create_sheet("All Models")
     ws.sheet_view.showGridLines = False
     ws.tab_color = C["blue"]
-    r = title_block(ws, "Mindee — All 18 Models: Fields & Capabilities",
-        "17 pre-built catalog models + custom model builder. Each row = one model with all extractable fields.",
+    r = title_block(ws, "Mindee — All Models: Fields & Capabilities",
+        "14 pre-built extraction models + 4 document utility tools (Crop/Split/Classify/OCR). Field counts from app.mindee.com.",
         C["blue"])
     cols = ["Category", "Model Name", "API Endpoint Slug", "Document Types", "Field Count", "All Extractable Fields"]
     hdr_row(ws, r, cols, [C["blue"]]*6)
     r += 1
     cat_bg = {
-        "Finance": C["mint"],  "Identity": C["sky"],    "Healthcare": C["lav"],
-        "Logistics": C["peach"], "HR": C["lemon"],      "Labels": C["ice"],
-        "Utility": C["pink"],
+        "Finance":           C["mint"],
+        "Identity":          C["sky"],
+        "Healthcare":        C["lav"],
+        "HR":                C["lemon"],
+        "Logistics":         C["peach"],
+        "Labels":            C["ice"],
+        "Utility — Crop":    C["pink"],
+        "Utility — Split":   C["pink"],
+        "Utility — OCR":     C["pink"],
+        "Utility — Classify":C["pink"],
     }
     for i, row in enumerate(MODELS_ALL):
         bg = cat_bg.get(row[0], C["lgrey"])
@@ -580,7 +603,7 @@ def build_models(wb):
         ws.cell(r, 2).font = font(True, 10, C["blue"])
         ws.row_dimensions[r].height = 60
         r += 1
-    set_widths(ws, [13, 22, 30, 26, 11, 70])
+    set_widths(ws, [20, 22, 28, 28, 11, 68])
     freeze(ws, "A4")
 
 def build_extraction_detail(wb):
@@ -588,11 +611,11 @@ def build_extraction_detail(wb):
     ws.sheet_view.showGridLines = False
     ws.tab_color = C["teal"]
     r = title_block(ws, "Extraction Models — Deep Dive by Model",
-        "Detailed field-by-field breakdown for each of the 13 pre-built extraction models.",
+        "Detailed field-by-field breakdown for 6 core pre-built extraction models. Field counts verified from app.mindee.com.",
         C["teal"])
 
     models_detail = [
-        ("Invoice", C["mint"], [
+        ("Invoice  (26 fields — Supplier Name + 25 more)", C["mint"], [
             ("supplier_name",          "Text",    "Supplier company name"),
             ("invoice_number",         "Text",    "Invoice identifier"),
             ("date",                   "Date",    "Invoice issue date (YYYY-MM-DD)"),
@@ -620,7 +643,7 @@ def build_extraction_detail(wb):
             ("supplier_company_registration[]","Array", "number + type (VAT/SIRET/SIREN/TIN/RFC/…)"),
             ("locale",                 "Object",  "language (ISO 639-1) + country (ISO 3166-1) + currency (ISO 4217)"),
         ]),
-        ("Receipt", C["sky"], [
+        ("Receipt  (17 fields — Supplier Name + 16 more)", C["sky"], [
             ("supplier_name",                  "Text",   "Store/restaurant name"),
             ("supplier_address",               "Text",   "Supplier address string"),
             ("supplier_phone_number",          "Text",   "Supplier phone"),
@@ -639,27 +662,28 @@ def build_extraction_detail(wb):
             ("purchase_subcategory",           "Class",  "restaurant | delivery | train | public | taxi | car_rental | plane | micromobility | office_supplies | electronics | cultural | groceries | other"),
             ("locale",                         "Object", "language + country + currency (ISO standards)"),
         ]),
-        ("Passport", C["lav"], [
-            ("given_names",       "Text",  "Holder's first names"),
-            ("surnames",          "Text",  "Holder's last names"),
-            ("date_of_birth",     "Date",  "YYYY-MM-DD"),
-            ("place_of_birth",    "Text",  "Birth location"),
-            ("passport_number",   "Text",  "Document identifier"),
-            ("issuing_country",   "Text",  "Country that issued the passport"),
-            ("nationality",       "Text",  "Holder's citizenship"),
-            ("date_of_issue",     "Date",  "YYYY-MM-DD"),
-            ("date_of_expiry",    "Date",  "YYYY-MM-DD"),
-            ("sex",               "Class", "Male | Female | Other"),
-            ("mrz_line_1",        "Text",  "Machine Readable Zone line 1"),
-            ("mrz_line_2",        "Text",  "Machine Readable Zone line 2"),
-            ("legal_guardian",    "Text",  "India only"),
-            ("spouse_name",       "Text",  "India only"),
-            ("mother_name",       "Text",  "India only"),
-            ("prior_passport_number", "Text", "India only"),
-            ("file_number",       "Text",  "India only"),
-            ("address",           "Text",  "India only — 3-line address"),
+        ("Passport  (12 fields — Given Names + 11 more)", C["lav"], [
+            ("given_names",           "Text",  "Holder's first names"),
+            ("surnames",              "Text",  "Holder's last names"),
+            ("date_of_birth",         "Date",  "YYYY-MM-DD"),
+            ("place_of_birth",        "Text",  "Birth location"),
+            ("passport_number",       "Text",  "Document identifier"),
+            ("issuing_country",       "Text",  "Country that issued the passport"),
+            ("nationality",           "Text",  "Holder's citizenship"),
+            ("date_of_issue",         "Date",  "YYYY-MM-DD"),
+            ("date_of_expiry",        "Date",  "YYYY-MM-DD"),
+            ("sex",                   "Class", "Male | Female | Other"),
+            ("mrz_line_1",            "Text",  "Machine Readable Zone line 1"),
+            ("mrz_line_2",            "Text",  "Machine Readable Zone line 2"),
+            ("— India extras —",      "—",     "Additional fields extracted from Indian passports only"),
+            ("legal_guardian",        "Text",  "India only"),
+            ("spouse_name",           "Text",  "India only"),
+            ("mother_name",           "Text",  "India only"),
+            ("prior_passport_number", "Text",  "India only — previous passport number"),
+            ("file_number",           "Text",  "India only — government file number"),
+            ("address",               "Text",  "India only — 3-line address"),
         ]),
-        ("US Healthcare Card", C["peach"], [
+        ("US Healthcare Card  (14 fields)", C["peach"], [
             ("company_name",     "Text",    "Health plan provider company"),
             ("plan_name",        "Text",    "Healthcare plan name"),
             ("member_name",      "Text",    "Covered individual"),
@@ -675,7 +699,7 @@ def build_extraction_detail(wb):
             ("copayments[]",     "Array",   "service_name (primary_care|ER|urgent_care|specialist|office_visit|prescription) + service_fees (Number)"),
             ("enrollment_date",  "Date",    "Plan enrollment date"),
         ]),
-        ("Resume / CV", C["lemon"], [
+        ("Resume / CV  (13 fields — Name + Address + 11 more)", C["lemon"], [
             ("name",                    "Text",   "Full candidate name"),
             ("address",                 "Text",   "Current address"),
             ("phone_number",            "Text",   "Contact phone"),
@@ -690,25 +714,21 @@ def build_extraction_detail(wb):
             ("summary",                 "Text",   "Objective/summary statement"),
             ("candidate_photo",         "ObjDet", "Photo location polygon"),
         ]),
-        ("Driver License", C["ice"], [
+        ("Driver License  (14 fields — First Name + 13 more)", C["ice"], [
             ("first_name",        "Text",  "First name"),
             ("last_name",         "Text",  "Last name"),
             ("date_of_birth",     "Date",  "YYYY-MM-DD"),
-            ("place_of_birth",    "Text",  "Birth city/country"),
-            ("nationality",       "Text",  "Citizenship"),
             ("sex",               "Class", "M | F | Other"),
             ("document_id",       "Text",  "Licence number"),
             ("issued_date",       "Date",  "Issue date"),
             ("expiry_date",       "Date",  "Expiry date"),
             ("country_code",      "Text",  "ISO country code"),
             ("issuing_authority", "Text",  "Issuing authority"),
-            ("mrz",               "Text",  "Machine-readable number"),
+            ("mrz",               "Text",  "Machine-readable zone number"),
             ("category",          "Text",  "EU driving categories (A, B, C, D…)"),
             ("street",            "Text",  "Street address"),
             ("city",              "Text",  "City"),
             ("state",             "Text",  "State/region"),
-            ("postal_code",       "Text",  "Postal/ZIP code"),
-            ("country",           "Text",  "Country of residence"),
         ]),
     ]
 
