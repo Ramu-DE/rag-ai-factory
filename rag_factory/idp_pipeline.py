@@ -97,6 +97,7 @@ class IDPPipeline:
         file_path:          str,
         doc_type_override:  Optional[str] = None,
         extraction_mode:    str = "auto",
+        original_name:      Optional[str] = None,   # original filename when file_path is a temp path
     ) -> IDPResult:
         t0 = time.time()
 
@@ -110,7 +111,7 @@ class IDPPipeline:
 
         # ── 2. Classify ───────────────────────────────────────────────────
         from .document_classifier import CLASSIFIER
-        fname = os.path.basename(file_path)
+        fname = original_name or os.path.basename(file_path)
         if doc_type_override:
             from .document_classifier import ClassificationResult, _DOC_TYPE_TO_MODE
             classification = ClassificationResult(
@@ -156,12 +157,12 @@ class IDPPipeline:
             validation = None
 
         # ── 6. Incremental ingest into Qdrant ─────────────────────────────
-        ingest_report = self._ingest(extracted, file_path)
+        ingest_report = self._ingest(extracted, file_path, display_name=fname)
 
         elapsed = int((time.time() - t0) * 1000)
 
         return IDPResult(
-            file_name=os.path.basename(file_path),
+            file_name=fname,
             doc_type=doc_type,
             classification=classification,
             extraction=extraction,
@@ -172,7 +173,7 @@ class IDPPipeline:
             method=extracted.method,
         )
 
-    def _ingest(self, extracted, file_path: str):
+    def _ingest(self, extracted, file_path: str, display_name: str = ""):
         """Chunk rich_text per page and incrementally ingest into Qdrant."""
         import hashlib, tempfile
         from .pdf_processor import IncrementalPDFProcessor
@@ -183,11 +184,12 @@ class IDPPipeline:
             overlap=self.overlap,
         )
 
+        doc_id = (display_name or os.path.basename(file_path)).replace(" ", "_")
+
         # For OCR results write a temporary plain-text file per page
-        # (IncrementalPDFProcessor normally handles PDFs via PyMuPDF;
-        #  for Textract results we synthesise a text-only temp PDF)
         if extracted.method.startswith("textract"):
-            return self._ingest_textract_pages(extracted, proc, file_path)
+            return self._ingest_textract_pages(extracted, proc, file_path,
+                                               display_name=display_name)
 
         # PyMuPDF extraction — process original file directly
         if self.force_reindex:
@@ -196,11 +198,12 @@ class IDPPipeline:
         return proc.process(
             pdf_path=file_path,
             collection_name=self.collection_name,
-            doc_id=os.path.basename(file_path).replace(" ", "_"),
+            doc_id=doc_id,
             tenant_id=self.tenant_id,
         )
 
-    def _ingest_textract_pages(self, extracted, proc, original_path: str):
+    def _ingest_textract_pages(self, extracted, proc, original_path: str,
+                               display_name: str = ""):
         """
         Ingest Textract-extracted pages as rich text.
         Writes a temporary text file and re-uses the incremental processor logic.
@@ -212,7 +215,7 @@ class IDPPipeline:
 
         t0     = _time.time()
         qdrant = get_qdrant_client()
-        fname  = os.path.basename(original_path).replace(" ", "_")
+        fname  = (display_name or os.path.basename(original_path)).replace(" ", "_")
         cname  = self.collection_name
 
         if self.force_reindex:

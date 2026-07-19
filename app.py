@@ -259,6 +259,7 @@ with tab_idp:
                     result = pipeline.process(
                         file_path=tmp_path,
                         doc_type_override=None if doc_type_override == "auto-detect" else doc_type_override,
+                        original_name=idp_file.name,
                     )
                     os.unlink(tmp_path)
 
@@ -453,7 +454,7 @@ with tab_batch:
                 tmp_path = tmp.name
 
             try:
-                result = pipeline.process(tmp_path)
+                result = pipeline.process(tmp_path, original_name=upload.name)
                 ir     = result.ingest_report
 
                 # Total chunks already in collection (includes previously indexed)
