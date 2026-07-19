@@ -142,9 +142,14 @@ class IDPPipeline:
         # ── 5. Validate — only when a skill ran ───────────────────────────
         from .field_validator import VALIDATOR
         if extraction and doc_type in _SKILL_DOC_TYPES:
+            # For medical, sub_type drives which required fields to check
+            sub_type = extraction.metadata.get("sub_type") if extraction.metadata else None
+            effective_doc_type = doc_type
+            if sub_type == "medical_report":
+                effective_doc_type = "medical_report"
             validation = VALIDATOR.validate(
                 fields=extraction.fields,
-                doc_type=doc_type,
+                doc_type=effective_doc_type,
                 confidence=extraction.confidence,
             )
         else:

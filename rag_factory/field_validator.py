@@ -68,6 +68,11 @@ _RULES: Dict[str, List[Dict]] = {
         {"type": "regex",         "field": "date_of_birth",  "pattern": _DATE_RE,  "message": "date_of_birth format unrecognised"},
         {"type": "regex",         "field": "expiry_date",    "pattern": _DATE_RE,  "message": "expiry_date format unrecognised"},
     ],
+    # Medical sub-type: informatics / research / textbook
+    "medical_report": [
+        {"type": "required",      "field": "title"},
+        {"type": "required",      "field": "document_date",  "severity": "warning"},
+    ],
 }
 
 

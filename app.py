@@ -452,36 +452,58 @@ with tab_batch:
             try:
                 result = pipeline.process(tmp_path)
                 ir     = result.ingest_report
-                row    = {
+
+                # Total chunks already in collection (includes previously indexed)
+                try:
+                    from rag_factory.components.base import get_qdrant_client
+                    _qc2 = get_qdrant_client()
+                    _ci2 = _qc2.get_collection(batch_collection)
+                    total_in_index = _ci2.points_count
+                except Exception:
+                    total_in_index = ir.chunks_embedded
+
+                sub_type = (result.extraction.metadata or {}).get("sub_type", "") \
+                           if result.extraction else ""
+                row = {
                     "file_name":             result.file_name,
                     "doc_type":              result.doc_type,
+                    "sub_type":              sub_type,
                     "confidence":            round(result.classification.confidence, 2),
+                    "classification_reason": result.classification.reason,
                     "is_scanned":            result.is_scanned,
                     "method":                result.method,
                     "pages_total":           ir.pages_total,
                     "pages_added":           ir.pages_added,
                     "pages_updated":         ir.pages_updated,
                     "pages_skipped":         ir.pages_skipped,
-                    "chunks_embedded":       ir.chunks_embedded,
+                    "chunks_this_run":       ir.chunks_embedded,
+                    "chunks_total_in_index": total_in_index,
                     "elapsed_ms":            result.elapsed_ms,
                     "incremental":           ir.incremental,
                     "extraction_confidence": round(result.extraction.confidence, 2) if result.extraction else None,
                     "validation_valid":      result.validation.valid if result.validation else None,
                     "validation_errors":     "; ".join(result.validation.errors) if result.validation else "",
-                    "extracted_fields":      _json.dumps(result.extraction.fields) if result.extraction else "{}",
+                    "validation_warnings":   "; ".join(result.validation.warnings) if result.validation else "",
+                    "extracted_fields":      _json.dumps(result.extraction.fields, ensure_ascii=False)
+                                             if result.extraction else "{}",
                     "error":                 "",
                 }
-                # Flatten top extracted fields as columns for CSV readability
+                # Flatten ALL extracted fields as individual columns for CSV readability
                 if result.extraction and result.extraction.fields:
-                    for fk, fv in list(result.extraction.fields.items())[:8]:
+                    for fk, fv in result.extraction.fields.items():
                         row[f"field_{fk}"] = fv
                 results_data.append(row)
                 total_pages  += ir.pages_total
                 total_chunks += ir.chunks_embedded
                 succeeded    += 1
+                inc_note = (f" | {ir.pages_skipped}/{ir.pages_total}p skipped (incremental)"
+                            if ir.incremental and ir.pages_skipped > 0 else "")
+                idx_note = f" | {total_in_index} total in index" if total_in_index > 0 else ""
                 status_area.success(
-                    f"[{i+1}/{total}] {upload.name} — {result.doc_type.upper()} "
-                    f"| {ir.pages_total}p | {ir.chunks_embedded} chunks | {result.elapsed_ms}ms"
+                    f"[{i+1}/{total}] {upload.name} — {result.doc_type.upper()}"
+                    + (f" [{sub_type}]" if sub_type else "")
+                    + f" | {ir.pages_total}p | {ir.chunks_embedded} new chunks"
+                    + inc_note + idx_note + f" | {result.elapsed_ms}ms"
                 )
             except Exception as exc:
                 results_data.append({
@@ -497,13 +519,22 @@ with tab_batch:
 
         # ── summary metrics ───────────────────────────────────────────────
         st.divider()
-        c1,c2,c3,c4,c5 = st.columns(5)
-        c1.metric("Files",        total)
-        c2.metric("Succeeded",    succeeded)
-        c3.metric("Failed",       failed,       delta=f"-{failed}" if failed else None,
+        total_in_coll = 0
+        try:
+            from rag_factory.components.base import get_qdrant_client as _gqc
+            _qcoll = _gqc().get_collection(batch_collection)
+            total_in_coll = _qcoll.points_count
+        except Exception:
+            total_in_coll = total_chunks
+
+        c1,c2,c3,c4,c5,c6 = st.columns(6)
+        c1.metric("Files",           total)
+        c2.metric("Succeeded",       succeeded)
+        c3.metric("Failed",          failed, delta=f"-{failed}" if failed else None,
                   delta_color="inverse" if failed else "off")
-        c4.metric("Total pages",  total_pages)
-        c5.metric("Total chunks", total_chunks)
+        c4.metric("Total pages",     total_pages)
+        c5.metric("New chunks",      total_chunks,    help="Chunks embedded this run")
+        c6.metric("Total in index",  total_in_coll,   help="All chunks available for Q&A")
 
         # ── results table ─────────────────────────────────────────────────
         if results_data:
@@ -538,26 +569,34 @@ with tab_batch:
             # ── per-file detail accordion ─────────────────────────────────
             st.subheader("Per-file Details")
             for row in results_data:
-                icon = "PASS" if not row.get("error") else "FAIL"
-                with st.expander(f"[{icon}] {row['file_name']} — {row.get('doc_type','?').upper()}"):
+                icon      = "PASS" if not row.get("error") else "FAIL"
+                sub_label = f" [{row['sub_type']}]" if row.get("sub_type") else ""
+                with st.expander(f"[{icon}] {row['file_name']} — {row.get('doc_type','?').upper()}{sub_label}"):
                     if row.get("error"):
                         st.error(row["error"])
                     else:
                         col_x, col_y = st.columns(2)
                         with col_x:
-                            st.write(f"**Doc type:** {row['doc_type']}")
+                            st.write(f"**Doc type:** {row['doc_type']}" +
+                                     (f"  ·  *{row['sub_type']}*" if row.get('sub_type') else ""))
                             st.write(f"**Confidence:** {row['confidence']:.0%}")
-                            st.write(f"**Pages:** {row['pages_total']} total, {row['pages_skipped']} skipped")
-                            st.write(f"**Chunks embedded:** {row['chunks_embedded']}")
+                            st.write(f"**Pages:** {row['pages_total']} total, "
+                                     f"{row['pages_skipped']} skipped (incremental)")
+                            st.write(f"**New chunks:** {row['chunks_this_run']}")
+                            st.write(f"**Total in index:** {row.get('chunks_total_in_index', '—')}")
                             st.write(f"**Elapsed:** {row['elapsed_ms']}ms")
                         with col_y:
                             st.write(f"**Method:** {row['method']}")
                             st.write(f"**Incremental:** {row['incremental']}")
                             if row.get("validation_valid") is not None:
-                                status = "PASS" if row["validation_valid"] else "FAIL"
-                                st.write(f"**Validation:** {status}")
+                                v_icon = "PASS" if row["validation_valid"] else "FAIL"
+                                st.write(f"**Validation:** {v_icon}")
                             if row.get("validation_errors"):
                                 st.error(row["validation_errors"])
+                            if row.get("validation_warnings"):
+                                st.warning(row["validation_warnings"])
+                        if row.get("classification_reason"):
+                            st.caption(f"Classification: {row['classification_reason']}")
                         if row.get("extracted_fields") and row["extracted_fields"] != "{}":
                             try:
                                 fields_dict = _json.loads(row["extracted_fields"])
