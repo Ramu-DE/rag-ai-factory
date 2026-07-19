@@ -73,11 +73,25 @@ def _extract_pages_pymupdf(pdf_path: str) -> List[PageRecord]:
     with fitz.open(pdf_path) as doc:
         for i, page in enumerate(doc):
             text = page.get_text("text").strip()
+            try:
+                label = page.get_label() or str(i + 1)
+            except Exception:
+                label = str(i + 1)
             records.append(PageRecord(
                 page_num=i, text=text, char_count=len(text),
-                metadata={"page_label": page.get_label() or str(i + 1)},
+                metadata={"page_label": label},
             ))
     return records
+
+
+def _extract_pages_image(img_path: str) -> List[PageRecord]:
+    """OCR a single image file — returns one PageRecord."""
+    from .ocr.local_engine import ocr_file_local
+    r = ocr_file_local(img_path, mode="forms")
+    return [PageRecord(
+        page_num=0, text=r.raw_text, char_count=len(r.raw_text),
+        metadata={"method": r.method},
+    )]
 
 
 def _extract_pages_pdfminer(pdf_path: str) -> List[PageRecord]:
@@ -92,8 +106,14 @@ def _extract_pages_pdfminer(pdf_path: str) -> List[PageRecord]:
     return records
 
 
+_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp", ".gif", ".webp"}
+
+
 def extract_pages(pdf_path: str) -> List[PageRecord]:
-    """Extract pages; PyMuPDF preferred, pdfminer as fallback."""
+    """Extract pages; auto-routes images through local OCR, PDFs through PyMuPDF."""
+    ext = os.path.splitext(pdf_path)[1].lower()
+    if ext in _IMAGE_EXTS:
+        return _extract_pages_image(pdf_path)
     try:
         return _extract_pages_pymupdf(pdf_path)
     except ImportError:

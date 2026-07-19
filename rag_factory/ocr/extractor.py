@@ -102,10 +102,78 @@ def _is_scanned(pages: List[ExtractedPage], threshold: int = 100) -> bool:
     return avg < threshold
 
 
-# ─── Textract extractor ───────────────────────────────────────────────────────
+# ─── OCR backend selector ─────────────────────────────────────────────────────
+def _ocr_backend() -> str:
+    """Return 'textract' | 'local' depending on AWS availability."""
+    return os.getenv("OCR_BACKEND", "auto")  # auto = try textract, fall back to local
+
+
+def _run_ocr(source_path: str, mode: str = "forms", is_bytes: bool = False):
+    """
+    Try Textract first; fall back to local engine automatically.
+    Returns a TextractResult-compatible object.
+    """
+    backend = _ocr_backend()
+
+    # Force local
+    if backend == "local":
+        from .local_engine import ocr_file_local, ocr_bytes_local
+        if is_bytes:
+            with open(source_path, "rb") as f:
+                return ocr_bytes_local(f.read(), mode=mode)
+        return ocr_file_local(source_path, mode=mode)
+
+    # Try Textract (default / auto)
+    try:
+        from .textract import ocr_file
+        return ocr_file(source_path, mode=mode)
+    except Exception as e:
+        err = str(e)
+        if "AccessDeniedException" in err or "credentials" in err.lower() \
+                or "not authorized" in err.lower() or "UnrecognizedClientException" in err:
+            # Silently fall back to local engine
+            from .local_engine import ocr_file_local
+            return ocr_file_local(source_path, mode=mode)
+        raise
+
+
+def _run_ocr_bytes(data: bytes, mode: str = "forms"):
+    """Run OCR on raw bytes — Textract first, local fallback."""
+    backend = _ocr_backend()
+    if backend == "local":
+        from .local_engine import ocr_bytes_local
+        return ocr_bytes_local(data, mode=mode)
+    try:
+        from .textract import ocr_bytes
+        return ocr_bytes(data, mode=mode)
+    except Exception as e:
+        err = str(e)
+        if "AccessDeniedException" in err or "credentials" in err.lower() \
+                or "not authorized" in err.lower() or "UnrecognizedClientException" in err:
+            from .local_engine import ocr_bytes_local
+            return ocr_bytes_local(data, mode=mode)
+        raise
+
+
+# ─── Textract / local extractor ───────────────────────────────────────────────
 def _extract_textract_pages(pdf_path: str, mode: str = "forms") -> List[ExtractedPage]:
-    from .textract import ocr_pdf_pages
-    results = ocr_pdf_pages(pdf_path, mode=mode)
+    """Extract pages using Textract if available, local engine as fallback."""
+    backend = _ocr_backend()
+    try:
+        if backend == "local":
+            raise RuntimeError("local forced")
+        from .textract import ocr_pdf_pages
+        results = ocr_pdf_pages(pdf_path, mode=mode)
+    except Exception as e:
+        err = str(e)
+        if backend == "local" or "AccessDeniedException" in err \
+                or "not authorized" in err.lower() or "credentials" in err.lower():
+            from .local_engine import get_local_engine
+            eng     = get_local_engine()
+            results = eng.process_pdf(pdf_path, mode=mode)
+        else:
+            raise
+
     pages = []
     for i, r in enumerate(results):
         rich = r.structured_text()
@@ -120,9 +188,9 @@ def _extract_textract_pages(pdf_path: str, mode: str = "forms") -> List[Extracte
     return pages
 
 
-def _extract_image_textract(img_path: str, mode: str = "forms") -> ExtractedDocument:
-    from .textract import ocr_file
-    r = ocr_file(img_path, mode=mode)
+def _extract_image_ocr(img_path: str, mode: str = "forms") -> ExtractedDocument:
+    """Extract image using Textract if available, local engine as fallback."""
+    r = _run_ocr(img_path, mode=mode)
     page = ExtractedPage(
         page_num=0,
         text=r.raw_text,
@@ -140,6 +208,10 @@ def _extract_image_textract(img_path: str, mode: str = "forms") -> ExtractedDocu
         id_fields=r.id_fields,
         page_count=1,
     )
+
+
+# Keep old name as alias for compatibility
+_extract_image_textract = _extract_image_ocr
 
 
 # ─── main entrypoint ─────────────────────────────────────────────────────────
@@ -169,38 +241,37 @@ def extract_document(
     # ── image files ───────────────────────────────────────────────────────────
     if is_image:
         mode = extraction_mode if extraction_mode in ("expense","id","forms","text") else textract_mode
-        return _extract_image_textract(file_path, mode=mode)
+        return _extract_image_ocr(file_path, mode=mode)
 
     # ── forced modes ─────────────────────────────────────────────────────────
     if extraction_mode == "expense":
-        from .textract import ocr_file
-        r = ocr_file(file_path, mode="expense")
+        r = _run_ocr(file_path, mode="expense")
         page = ExtractedPage(
-            page_num=0, text="", rich_text=r.structured_text(),
-            char_count=0, tables=[], forms=[],
+            page_num=0, text=r.raw_text, rich_text=r.structured_text(),
+            char_count=len(r.raw_text), tables=r.tables, forms=r.forms,
         )
         return ExtractedDocument(
             file_name=fname, pages=[page], is_scanned=False,
-            method="textract_expense", expense_fields=r.expense_fields, page_count=1,
+            method=r.method, expense_fields=r.expense_fields, page_count=1,
         )
 
     if extraction_mode == "id":
-        from .textract import ocr_file
-        r = ocr_file(file_path, mode="id")
+        r = _run_ocr(file_path, mode="id")
         page = ExtractedPage(
             page_num=0, text=r.raw_text, rich_text=r.structured_text(),
             char_count=len(r.raw_text), tables=[], forms=[],
         )
         return ExtractedDocument(
             file_name=fname, pages=[page], is_scanned=False,
-            method="textract_id", id_fields=r.id_fields, page_count=1,
+            method=r.method, id_fields=r.id_fields, page_count=1,
         )
 
     if extraction_mode == "textract":
         pages = _extract_textract_pages(file_path, mode=textract_mode)
+        method = pages[0].metadata.get("method", f"ocr_{textract_mode}") if pages else f"ocr_{textract_mode}"
         return ExtractedDocument(
             file_name=fname, pages=pages, is_scanned=True,
-            method=f"textract_{textract_mode}", page_count=len(pages),
+            method=method, page_count=len(pages),
         )
 
     # ── auto mode (PDF) ───────────────────────────────────────────────────────
@@ -212,13 +283,14 @@ def extract_document(
                 file_name=fname, pages=pymupdf_pages, is_scanned=False,
                 method="pymupdf", page_count=len(pymupdf_pages),
             )
-        # Scanned → fall through to Textract
+        # Scanned → fall through to OCR
     except ImportError:
         pass
 
-    # Textract fallback for scanned / no PyMuPDF
+    # OCR fallback (Textract → local engine auto-fallback)
     pages = _extract_textract_pages(file_path, mode=textract_mode)
+    method = pages[0].metadata.get("method", f"ocr_{textract_mode}") if pages else f"ocr_{textract_mode}"
     return ExtractedDocument(
         file_name=fname, pages=pages, is_scanned=True,
-        method=f"textract_{textract_mode}", page_count=len(pages),
+        method=method, page_count=len(pages),
     )
