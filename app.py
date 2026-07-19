@@ -350,9 +350,12 @@ with tab_idp:
                             f"(no skill required). Document is indexed and fully queryable via Ask tab."
                         )
 
-                    # Store for Ask tab
+                    # Store for Ask tab — also force-update the selectbox key so
+                    # the dropdown reflects this collection immediately on tab switch
                     st.session_state["active_collection"] = idp_collection
                     st.session_state["active_pdf"]        = idp_file.name
+                    st.session_state["ask_coll_select"]   = idp_collection
+                    st.session_state["_ask_coll_source"]  = idp_collection
 
                     st.success(f"Document indexed into `{idp_collection}` — switch to **Ask** tab to query it.")
 
@@ -607,6 +610,8 @@ with tab_batch:
                                 pass
 
         st.session_state["active_collection"] = batch_collection
+        st.session_state["ask_coll_select"]  = batch_collection
+        st.session_state["_ask_coll_source"] = batch_collection
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -679,9 +684,11 @@ with tab_pdf:
                     if report.pages_skipped == report.pages_total and report.incremental:
                         st.info("No changes detected — full re-index skipped. Upload a modified PDF to trigger updates.")
 
-                    # Store collection for Ask tab
+                    # Store collection for Ask tab — force selectbox to update
                     st.session_state["active_collection"] = pdf_collection
                     st.session_state["active_pdf"]        = uploaded.name
+                    st.session_state["ask_coll_select"]   = pdf_collection
+                    st.session_state["_ask_coll_source"]  = pdf_collection
 
                 except ImportError as ie:
                     st.error(
@@ -723,11 +730,12 @@ with tab_ask:
     st.header("Ask a Question")
     st.caption("The router picks the optimal pipeline spec based on query intent — no manual spec selection needed.")
 
-    # Pre-fill collection from whichever tab last processed a document
-    default_coll = st.session_state.get("active_collection", "factory_pdf_demo")
-    if "ask_coll" not in st.session_state or st.session_state.get("_ask_coll_source") != default_coll:
-        st.session_state["ask_coll"]         = default_coll
-        st.session_state["_ask_coll_source"] = default_coll
+    # Sync collection from whichever tab last processed a document.
+    # Write to ask_coll_select BEFORE the widget renders so Streamlit picks it up.
+    active_coll = st.session_state.get("active_collection", "")
+    if active_coll and st.session_state.get("_ask_coll_source") != active_coll:
+        st.session_state["ask_coll_select"]  = active_coll
+        st.session_state["_ask_coll_source"] = active_coll
 
     active_pdf = st.session_state.get("active_pdf", "")
 
@@ -749,18 +757,22 @@ with tab_ask:
         )
     with col_ask2:
         if _available_colls:
-            # Show dropdown of real collections; default to last active
-            _default_idx = _available_colls.index(default_coll) \
-                           if default_coll in _available_colls else 0
+            # Determine the correct default: last active collection, else first in list
+            _want = st.session_state.get("ask_coll_select", active_coll or "")
+            _default_idx = _available_colls.index(_want) \
+                           if _want in _available_colls else 0
             ask_collection = st.selectbox(
                 "Collection",
                 _available_colls,
                 index=_default_idx,
                 key="ask_coll_select",
             )
-            st.session_state["ask_coll"] = ask_collection
         else:
-            ask_collection = st.text_input("Collection", key="ask_coll")
+            ask_collection = st.text_input(
+                "Collection",
+                value=active_coll or "idp_documents",
+                key="ask_coll_text",
+            )
 
     if active_pdf and ask_collection:
         st.caption(f"Active document: **{active_pdf}** → `{ask_collection}`")
