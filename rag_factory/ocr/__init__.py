@@ -9,6 +9,10 @@ from .ml_layout import (
     words_from_tesseract,
     SINGLE_COLUMN, MULTI_COLUMN, FORM, TABLE_HEAVY, MIXED,
 )
+from .ner_normalizer import (
+    NERNormalizer, NERResult, Entity,
+    normalize_ocr_text, get_normalizer,
+)
 
 __all__ = [
     # unified extractor (auto Textract → local fallback)
@@ -22,4 +26,7 @@ __all__ = [
     "classify_layout", "LayoutResult", "WordBox",
     "words_from_tesseract",
     "SINGLE_COLUMN", "MULTI_COLUMN", "FORM", "TABLE_HEAVY", "MIXED",
+    # Post-OCR NER + field normalizer
+    "NERNormalizer", "NERResult", "Entity",
+    "normalize_ocr_text", "get_normalizer",
 ]

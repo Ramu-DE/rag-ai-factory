@@ -37,6 +37,7 @@ class ExtractedPage:
     tables:      List[Any] = field(default_factory=list)   # Table objects
     forms:       List[Any] = field(default_factory=list)   # FormField objects
     metadata:    Dict[str, Any] = field(default_factory=dict)
+    ner:         Optional[Any] = None  # NERResult — populated by NER normalizer
 
 
 @dataclass
@@ -214,6 +215,20 @@ def _extract_image_ocr(img_path: str, mode: str = "forms") -> ExtractedDocument:
 _extract_image_textract = _extract_image_ocr
 
 
+# ─── NER enrichment ──────────────────────────────────────────────────────────
+def _enrich_ner(doc: "ExtractedDocument") -> "ExtractedDocument":
+    """Run post-OCR NER normalization on every page (in-place)."""
+    try:
+        from .ner_normalizer import get_normalizer
+        nn = get_normalizer()
+        for page in doc.pages:
+            if page.text and not page.ner:
+                page.ner = nn.run(page.text)
+    except Exception:
+        pass   # NER enrichment is optional — never block extraction
+    return doc
+
+
 # ─── main entrypoint ─────────────────────────────────────────────────────────
 def extract_document(
     file_path:       str,
@@ -250,10 +265,10 @@ def extract_document(
             page_num=0, text=r.raw_text, rich_text=r.structured_text(),
             char_count=len(r.raw_text), tables=r.tables, forms=r.forms,
         )
-        return ExtractedDocument(
+        return _enrich_ner(ExtractedDocument(
             file_name=fname, pages=[page], is_scanned=False,
             method=r.method, expense_fields=r.expense_fields, page_count=1,
-        )
+        ))
 
     if extraction_mode == "id":
         r = _run_ocr(file_path, mode="id")
@@ -261,28 +276,28 @@ def extract_document(
             page_num=0, text=r.raw_text, rich_text=r.structured_text(),
             char_count=len(r.raw_text), tables=[], forms=[],
         )
-        return ExtractedDocument(
+        return _enrich_ner(ExtractedDocument(
             file_name=fname, pages=[page], is_scanned=False,
             method=r.method, id_fields=r.id_fields, page_count=1,
-        )
+        ))
 
     if extraction_mode == "textract":
         pages = _extract_textract_pages(file_path, mode=textract_mode)
         method = pages[0].metadata.get("method", f"ocr_{textract_mode}") if pages else f"ocr_{textract_mode}"
-        return ExtractedDocument(
+        return _enrich_ner(ExtractedDocument(
             file_name=fname, pages=pages, is_scanned=True,
             method=method, page_count=len(pages),
-        )
+        ))
 
     # ── auto mode (PDF) ───────────────────────────────────────────────────────
     try:
         import fitz
         pymupdf_pages = _extract_pymupdf(file_path)
         if not _is_scanned(pymupdf_pages, threshold=scan_threshold):
-            return ExtractedDocument(
+            return _enrich_ner(ExtractedDocument(
                 file_name=fname, pages=pymupdf_pages, is_scanned=False,
                 method="pymupdf", page_count=len(pymupdf_pages),
-            )
+            ))
         # Scanned → fall through to OCR
     except ImportError:
         pass
@@ -290,7 +305,7 @@ def extract_document(
     # OCR fallback (Textract → local engine auto-fallback)
     pages = _extract_textract_pages(file_path, mode=textract_mode)
     method = pages[0].metadata.get("method", f"ocr_{textract_mode}") if pages else f"ocr_{textract_mode}"
-    return ExtractedDocument(
+    return _enrich_ner(ExtractedDocument(
         file_name=fname, pages=pages, is_scanned=True,
         method=method, page_count=len(pages),
-    )
+    ))
