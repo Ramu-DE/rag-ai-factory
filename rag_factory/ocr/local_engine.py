@@ -383,24 +383,98 @@ def _count_lines_proj(proj) -> int:
 
 
 def _detect_borderless_tables(words: List[_Word], img_width: int) -> List[Table]:
-    """Detect borderless tables via column-alignment whitespace analysis."""
+    """
+    Detect borderless (gridline-free) tables using DBSCAN column clustering.
+
+    Algorithm (inspired by Mindee/ABBYY borderless table detection):
+      1. Group words into horizontal lines (by top-coordinate proximity)
+      2. Filter to lines that have ≥ 3 words (potential table rows)
+      3. DBSCAN-cluster the x-centre positions of words across all candidate rows
+         to discover recurring column positions
+      4. Require ≥ 3 consistent columns AND ≥ 3 rows before declaring a table
+      5. Return a Table per discovered contiguous table block, with cells
+         already assigned by nearest column centroid
+
+    Advantages over whitespace projection:
+      - Handles variable-width columns (numeric right-aligned + text left-aligned)
+      - Robust to irregular spacing as long as column positions recur
+      - Confidence-aware: low-confidence words don't anchor column positions
+    """
     if not words or img_width == 0:
         return []
+
+    try:
+        import numpy as np
+        from sklearn.cluster import DBSCAN as _DBSCAN
+    except ImportError:
+        # Fallback: old whitespace heuristic
+        lines = _words_to_lines(words)
+        col_lines = [l for l in lines if len(l) >= 3]
+        if len(col_lines) < 3:
+            return []
+        return [Table(page=1, rows=len(col_lines), cols=len(col_lines[0]), cells=[])]
+
     lines = _words_to_lines(words)
-    if len(lines) < 3:
+    # Only rows with 3+ words are candidate table rows
+    cand_lines = [ln for ln in lines if len(ln) >= 3]
+    if len(cand_lines) < 3:
         return []
-    # Look for 3+ consecutive lines with ≥3 column-aligned words
-    col_lines = [l for l in lines if len(l) >= 3]
-    if len(col_lines) < 3:
+
+    # Collect all word x-centres from candidate lines (pixel space → normalised)
+    cxs = np.array([
+        (w.left + w.width / 2) / img_width
+        for ln in cand_lines for w in ln
+        if w.conf > 0.30
+    ]).reshape(-1, 1)
+
+    if len(cxs) < 6:
         return []
-    # Simple heuristic: if >30% of lines have ≥3 words at similar x positions
-    return [Table(page=1, rows=len(col_lines), cols=len(col_lines[0]), cells=[])]
+
+    # DBSCAN: eps = 4% of page width; each cluster = one column band
+    labels = _DBSCAN(eps=0.04, min_samples=2).fit_predict(cxs)
+    n_cols = len(set(labels)) - (1 if -1 in labels else 0)
+    if n_cols < 3:
+        return []
+
+    # Compute column centroids (sorted left to right)
+    col_centroids = sorted(
+        np.mean(cxs[labels == c]) for c in set(labels) if c != -1
+    )
+
+    # Build cells: assign each word in each candidate line to nearest column
+    cells: List[TableCell] = []
+    for r_idx, ln in enumerate(cand_lines):
+        for w in ln:
+            wcx = (w.left + w.width / 2) / img_width
+            # Nearest centroid by absolute distance
+            col_idx = int(np.argmin([abs(wcx - cc) for cc in col_centroids]))
+            cells.append(TableCell(
+                row=r_idx, col=col_idx,
+                text=w.text, confidence=w.conf,
+            ))
+
+    table = Table(
+        page=1,
+        rows=len(cand_lines),
+        cols=n_cols,
+        cells=cells,
+    )
+    return [table]
 
 
 def _extract_table_cells_from_words(
     words: List[_Word], table: Table
 ) -> Table:
-    """Populate table cells by clustering words into grid positions."""
+    """
+    Populate table cells from bordered-table detection output.
+
+    For borderless tables (already have cells from DBSCAN), returns as-is.
+    For bordered tables (cells=[]), assigns words by x-position within each row.
+    """
+    if table.cells:
+        # Already populated by DBSCAN column clustering
+        return table
+
     if not words or table.rows < 2 or table.cols < 2:
         return table
 
@@ -410,14 +484,13 @@ def _extract_table_cells_from_words(
 
     cells = []
     for r, line in enumerate(lines[:table.rows]):
-        # Distribute words across columns by x-position
         if not line:
             continue
-        line_width = max(w.right for w in line) - min(w.left for w in line) + 1
-        col_width  = line_width / table.cols
+        line_left  = min(w.left  for w in line)
+        line_right = max(w.right for w in line)
+        col_width  = (line_right - line_left + 1) / table.cols
         for w in line:
-            col = min(int((w.left - min(x.left for x in line)) / col_width),
-                      table.cols - 1)
+            col = min(int((w.left - line_left) / col_width), table.cols - 1)
             cells.append(TableCell(row=r, col=col, text=w.text,
                                    confidence=w.conf))
     table.cells = cells
