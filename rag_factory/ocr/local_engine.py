@@ -447,17 +447,25 @@ _FIELD_LABELS = re.compile(
 )
 
 
-def _extract_forms_from_words(words: List[_Word]) -> List[FormField]:
-    """Extract key-value pairs from OCR word geometry."""
+def _extract_forms_from_words(words: List[_Word], aggressive: bool = False) -> List[FormField]:
+    """
+    Extract key-value pairs from OCR word geometry.
+
+    aggressive=True (set when ML layout classifier detects FORM/MIXED):
+      - Lower key-length threshold (20 → 40 chars)
+      - Accept lines without a colon if the label matches known field patterns
+      - Also scan next-line proximity (label on line N, value on line N+1)
+    """
     lines = _words_to_lines(words)
     forms: List[FormField] = []
+    key_len_limit = 40 if aggressive else 30
 
-    for line in lines:
+    for i, line in enumerate(lines):
         line_text = " ".join(w.text for w in line)
         m = _KV_SPLIT.match(line_text)
         if m:
             key, val = m.group(1).strip(), m.group(2).strip()
-            if _FIELD_LABELS.search(key) or len(key) <= 30:
+            if _FIELD_LABELS.search(key) or len(key) <= key_len_limit:
                 avg_conf = sum(w.conf for w in line) / len(line) if line else 0
                 forms.append(FormField(
                     key=key, value=val,
@@ -482,6 +490,23 @@ def _extract_forms_from_words(words: List[_Word]) -> List[FormField]:
                         value_confidence=avg_conf,
                         page=1,
                     ))
+
+        # Aggressive mode: label-only line followed by value on next line
+        if aggressive and i + 1 < len(lines):
+            key_candidate = line_text.strip().rstrip(":")
+            next_text = " ".join(w.text for w in lines[i + 1]).strip()
+            # Key line: short (≤5 words), ends with colon or is a known label
+            if (len(line) <= 5 and next_text
+                    and (_FIELD_LABELS.search(key_candidate)
+                         or key_candidate.endswith(":"))):
+                avg_conf = (sum(w.conf for w in line) + sum(w.conf for w in lines[i+1])) / max(len(line) + len(lines[i+1]), 1)
+                forms.append(FormField(
+                    key=key_candidate.rstrip(":"),
+                    value=next_text,
+                    key_confidence=avg_conf,
+                    value_confidence=avg_conf,
+                    page=1,
+                ))
 
     # Deduplicate by key
     seen: Dict[str, bool] = {}
@@ -681,8 +706,20 @@ class LocalOCREngine:
         return self._backend
 
     # ── core OCR ──────────────────────────────────────────────────────────────
-    def _ocr_image(self, source) -> Tuple[str, List[_Word]]:
-        """Return (full_text, word_list) for an image source."""
+    def _ocr_image(self, source) -> Tuple[str, List[_Word], "LayoutResult"]:
+        """
+        Return (full_text, word_list, layout) for an image source.
+
+        The ML layout classifier runs after Tesseract word extraction and
+        chooses the text-assembly strategy:
+          sequential   → normal left-to-right reading order
+          column_split → two-column academic/newspaper layout
+          form_kv      → KV-aware line assembly
+          table_grid   → row-aligned assembly
+          combined     → form + table mixed strategy
+        """
+        from .ml_layout import classify_layout, words_from_tesseract, WordBox, LayoutResult as _LR
+
         pil = _to_pil(source)
         if self.preprocess:
             pil = PREPROCESSOR(pil, upscale=self.upscale)
@@ -694,56 +731,105 @@ class LocalOCREngine:
 
         if self._backend == "tesseract":
             words = _tesseract_words(pil, lang=self.lang)
-            text  = _tesseract_text(pil, lang=self.lang) if not words else \
-                    _column_aware_text(words, pil.width)
-            return text, words
+            if not words:
+                text = _tesseract_text(pil, lang=self.lang)
+                layout = _LR("SINGLE_COLUMN", 0.50, {}, "No words — fallback text")
+                return text, [], layout
+
+            # ML layout classification
+            wb_words = [
+                WordBox(w.text, w.left, w.top, w.left + max(w.width, 1),
+                        w.top + max(w.height, 1), w.conf)
+                for w in words
+            ]
+            layout = classify_layout(wb_words, page_width=pil.width, page_height=pil.height)
+
+            # Strategy-aware text assembly
+            strategy = layout.ocr_strategy()
+            if strategy == "column_split":
+                text = _column_aware_text(words, pil.width)
+            elif strategy in ("form_kv", "table_grid", "combined"):
+                # For forms/tables: preserve spatial order (top-to-bottom, left-to-right)
+                sorted_words = sorted(words, key=lambda w: (round(w.top / 5) * 5, w.left))
+                text = " ".join(w.text for w in sorted_words if w.text.strip())
+            else:
+                text = _column_aware_text(words, pil.width)
+
+            return text, words, layout
 
         if self._backend == "easyocr":
             words = _easyocr_words(pil)
-            text  = _column_aware_text(words, pil.width)
-            return text, words
+            wb_words = [
+                WordBox(w.text, w.left, w.top, w.left + max(w.width, 1),
+                        w.top + max(w.height, 1), w.conf)
+                for w in words
+            ] if words else []
+            layout = classify_layout(wb_words, page_width=pil.width, page_height=pil.height) \
+                     if wb_words else _LR("SINGLE_COLUMN", 0.50, {}, "EasyOCR no words")
+            text = _column_aware_text(words, pil.width)
+            return text, words, layout
 
-        return "", []
+        from .ml_layout import LayoutResult as _LR
+        layout = _LR("SINGLE_COLUMN", 0.50, {}, "No backend")
+        return "", [], layout
 
     # ── public API  (mirrors Textract API signatures) ─────────────────────────
     def detect_text(self, source) -> TextractResult:
         """Equivalent to Textract DetectDocumentText."""
-        text, _ = self._ocr_image(source)
+        text, _, layout = self._ocr_image(source)
         return TextractResult(
-            raw_text=text, page_count=1, method="local_detect_text"
+            raw_text=text, page_count=1, method="local_detect_text",
+            metadata={"layout_type": layout.layout_type,
+                      "layout_confidence": round(layout.confidence, 3),
+                      "layout_reasoning": layout.reasoning},
         )
 
     def analyze_document(self, source, features=None) -> TextractResult:
         """
         Equivalent to Textract AnalyzeDocument(FeatureTypes=["TABLES","FORMS"]).
         features: list containing "TABLES", "FORMS", or both (default both)
+
+        ML layout classification drives strategy selection:
+          FORM / MIXED        → prioritise form KV extraction
+          TABLE_HEAVY / MIXED → prioritise bordered + borderless table detection
+          MULTI_COLUMN        → column-split text assembly before form detection
+          SINGLE_COLUMN       → standard sequential extraction
         """
         if features is None:
             features = ["TABLES", "FORMS"]
 
-        text, words = self._ocr_image(source)
+        text, words, layout = self._ocr_image(source)
         pil = _to_pil(source)
 
         tables: List[Table] = []
         forms:  List[FormField] = []
 
+        strategy = layout.ocr_strategy()
+
         if "TABLES" in features:
-            # Try bordered first, then borderless
+            # Always try bordered first (definitive structural signal)
             bordered = _detect_tables_cv2(pil)
             if bordered:
-                tables = [_extract_table_cells_from_words(words, t)
-                          for t in bordered]
-            else:
+                tables = [_extract_table_cells_from_words(words, t) for t in bordered]
+            elif strategy in ("table_grid", "combined") or layout.is_tabular():
+                # ML says table-heavy → invest in borderless detection
                 borderless = _detect_borderless_tables(words, pil.width)
-                tables = [_extract_table_cells_from_words(words, t)
-                          for t in borderless]
+                tables = [_extract_table_cells_from_words(words, t) for t in borderless]
 
         if "FORMS" in features:
-            forms = _extract_forms_from_words(words)
+            # ML form hint → be more aggressive with KV extraction
+            if strategy in ("form_kv", "combined") or layout.is_form():
+                forms = _extract_forms_from_words(words, aggressive=True)
+            else:
+                forms = _extract_forms_from_words(words)
 
         return TextractResult(
             raw_text=text, tables=tables, forms=forms,
             page_count=1, method="local_analyze_document",
+            metadata={"layout_type": layout.layout_type,
+                      "layout_confidence": round(layout.confidence, 3),
+                      "layout_strategy": strategy,
+                      "layout_reasoning": layout.reasoning},
         )
 
     def analyze_expense(self, source) -> TextractResult:

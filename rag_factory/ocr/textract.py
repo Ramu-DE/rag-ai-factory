@@ -98,6 +98,7 @@ class TextractResult:
     id_fields:      Dict[str, str]    = field(default_factory=dict)
     page_count:     int               = 0
     method:         str               = "textract"
+    metadata:       Dict[str, Any]    = field(default_factory=dict)
 
     def structured_text(self) -> str:
         """

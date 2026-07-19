@@ -4,6 +4,11 @@ from .local_engine import (
     LocalOCREngine, get_local_engine,
     ocr_file_local, ocr_bytes_local,
 )
+from .ml_layout import (
+    classify_layout, LayoutResult, WordBox,
+    words_from_tesseract,
+    SINGLE_COLUMN, MULTI_COLUMN, FORM, TABLE_HEAVY, MIXED,
+)
 
 __all__ = [
     # unified extractor (auto Textract → local fallback)
@@ -13,4 +18,8 @@ __all__ = [
     # local engine (no AWS required)
     "LocalOCREngine", "get_local_engine",
     "ocr_file_local", "ocr_bytes_local",
+    # ML layout classifier
+    "classify_layout", "LayoutResult", "WordBox",
+    "words_from_tesseract",
+    "SINGLE_COLUMN", "MULTI_COLUMN", "FORM", "TABLE_HEAVY", "MIXED",
 ]
