@@ -465,7 +465,7 @@ with tab_batch:
                 sub_type = (result.extraction.metadata or {}).get("sub_type", "") \
                            if result.extraction else ""
                 row = {
-                    "file_name":             result.file_name,
+                    "file_name":             upload.name,
                     "doc_type":              result.doc_type,
                     "sub_type":              sub_type,
                     "confidence":            round(result.classification.confidence, 2),
