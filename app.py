@@ -198,8 +198,8 @@ def _list_specs():
 
 
 # ─── tabs ─────────────────────────────────────────────────────────────────────
-tab_idp, tab_pdf, tab_ask, tab_eval, tab_compare, tab_overview, tab_manifest = st.tabs([
-    "IDP (Smart Extract)", "PDF Upload + RAG", "Ask (Smart Route)", "Evaluate", "Compare Specs", "Overview", "Manifest",
+tab_idp, tab_batch, tab_pdf, tab_ask, tab_eval, tab_compare, tab_overview, tab_manifest = st.tabs([
+    "IDP (Smart Extract)", "Batch Upload", "PDF Upload + RAG", "Ask (Smart Route)", "Evaluate", "Compare Specs", "Overview", "Manifest",
 ])
 
 
@@ -392,6 +392,182 @@ Upload (PDF / PNG / JPG / TIFF)
             embed + upsert only changed pages
             → ready for Q&A via Ask tab
 """, language="text")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BATCH UPLOAD
+# ═══════════════════════════════════════════════════════════════════════════════
+with tab_batch:
+    st.header("Batch Document Upload")
+    st.caption(
+        "Upload multiple files at once — each is classified, extracted, validated, "
+        "and incrementally indexed. Download results as CSV or JSON."
+    )
+
+    col_b1, col_b2 = st.columns([2, 1])
+    with col_b1:
+        batch_files = st.file_uploader(
+            "Drop multiple PDFs or images",
+            type=["pdf","png","jpg","jpeg","tiff","tif"],
+            accept_multiple_files=True,
+            key="batch_upload",
+            label_visibility="collapsed",
+        )
+    with col_b2:
+        batch_collection = st.text_input("Collection", value="idp_batch", key="bcoll")
+        batch_chunk_size = st.slider("Chunk size", 200, 800, 400, key="bchunk")
+        batch_force      = st.checkbox("Force full re-index", key="bforce")
+        batch_export_fmt = st.radio("Export format", ["CSV", "JSON"], horizontal=True)
+
+    if batch_files:
+        st.info(f"{len(batch_files)} file(s) selected: {', '.join(f.name for f in batch_files)}")
+
+    if batch_files and st.button("Process All Files", type="primary", key="batch_btn"):
+        import tempfile, os, json as _json
+        import pandas as pd
+        from rag_factory.idp_pipeline import IDPPipeline
+
+        progress_bar = st.progress(0, text="Starting...")
+        status_area  = st.empty()
+        results_data = []
+        total        = len(batch_files)
+        succeeded = failed = total_pages = total_chunks = 0
+
+        pipeline = IDPPipeline(
+            collection_name=batch_collection,
+            index_dir=INDEX_DIR,
+            chunk_size=batch_chunk_size,
+            force_reindex=batch_force,
+            tenant_id=tenant_id or None,
+        )
+
+        for i, upload in enumerate(batch_files):
+            progress_bar.progress((i) / total, text=f"Processing {upload.name} ({i+1}/{total})...")
+            suffix = os.path.splitext(upload.name)[1] or ".pdf"
+
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                tmp.write(upload.getbuffer())
+                tmp_path = tmp.name
+
+            try:
+                result = pipeline.process(tmp_path)
+                ir     = result.ingest_report
+                row    = {
+                    "file_name":             result.file_name,
+                    "doc_type":              result.doc_type,
+                    "confidence":            round(result.classification.confidence, 2),
+                    "is_scanned":            result.is_scanned,
+                    "method":                result.method,
+                    "pages_total":           ir.pages_total,
+                    "pages_added":           ir.pages_added,
+                    "pages_updated":         ir.pages_updated,
+                    "pages_skipped":         ir.pages_skipped,
+                    "chunks_embedded":       ir.chunks_embedded,
+                    "elapsed_ms":            result.elapsed_ms,
+                    "incremental":           ir.incremental,
+                    "extraction_confidence": round(result.extraction.confidence, 2) if result.extraction else None,
+                    "validation_valid":      result.validation.valid if result.validation else None,
+                    "validation_errors":     "; ".join(result.validation.errors) if result.validation else "",
+                    "extracted_fields":      _json.dumps(result.extraction.fields) if result.extraction else "{}",
+                    "error":                 "",
+                }
+                # Flatten top extracted fields as columns for CSV readability
+                if result.extraction and result.extraction.fields:
+                    for fk, fv in list(result.extraction.fields.items())[:8]:
+                        row[f"field_{fk}"] = fv
+                results_data.append(row)
+                total_pages  += ir.pages_total
+                total_chunks += ir.chunks_embedded
+                succeeded    += 1
+                status_area.success(
+                    f"[{i+1}/{total}] {upload.name} — {result.doc_type.upper()} "
+                    f"| {ir.pages_total}p | {ir.chunks_embedded} chunks | {result.elapsed_ms}ms"
+                )
+            except Exception as exc:
+                results_data.append({
+                    "file_name": upload.name, "doc_type": "error",
+                    "error": str(exc),
+                })
+                failed += 1
+                status_area.error(f"[{i+1}/{total}] {upload.name} — FAILED: {exc}")
+            finally:
+                os.unlink(tmp_path)
+
+        progress_bar.progress(1.0, text="Complete")
+
+        # ── summary metrics ───────────────────────────────────────────────
+        st.divider()
+        c1,c2,c3,c4,c5 = st.columns(5)
+        c1.metric("Files",        total)
+        c2.metric("Succeeded",    succeeded)
+        c3.metric("Failed",       failed,       delta=f"-{failed}" if failed else None,
+                  delta_color="inverse" if failed else "off")
+        c4.metric("Total pages",  total_pages)
+        c5.metric("Total chunks", total_chunks)
+
+        # ── results table ─────────────────────────────────────────────────
+        if results_data:
+            df_batch = pd.DataFrame(results_data)
+            st.dataframe(df_batch, use_container_width=True, hide_index=True)
+
+            # ── export ────────────────────────────────────────────────────
+            st.subheader("Export Results")
+            if batch_export_fmt == "CSV":
+                csv_bytes = df_batch.to_csv(index=False).encode("utf-8")
+                st.download_button(
+                    label="Download CSV",
+                    data=csv_bytes,
+                    file_name=f"batch_results_{batch_collection}.csv",
+                    mime="text/csv",
+                    type="primary",
+                )
+            else:
+                # Full JSON with extracted fields + tables
+                full_records = []
+                for r, upload in zip(results_data, batch_files):
+                    full_records.append(r)
+                json_bytes = _json.dumps(full_records, indent=2, default=str).encode("utf-8")
+                st.download_button(
+                    label="Download JSON",
+                    data=json_bytes,
+                    file_name=f"batch_results_{batch_collection}.json",
+                    mime="application/json",
+                    type="primary",
+                )
+
+            # ── per-file detail accordion ─────────────────────────────────
+            st.subheader("Per-file Details")
+            for row in results_data:
+                icon = "PASS" if not row.get("error") else "FAIL"
+                with st.expander(f"[{icon}] {row['file_name']} — {row.get('doc_type','?').upper()}"):
+                    if row.get("error"):
+                        st.error(row["error"])
+                    else:
+                        col_x, col_y = st.columns(2)
+                        with col_x:
+                            st.write(f"**Doc type:** {row['doc_type']}")
+                            st.write(f"**Confidence:** {row['confidence']:.0%}")
+                            st.write(f"**Pages:** {row['pages_total']} total, {row['pages_skipped']} skipped")
+                            st.write(f"**Chunks embedded:** {row['chunks_embedded']}")
+                            st.write(f"**Elapsed:** {row['elapsed_ms']}ms")
+                        with col_y:
+                            st.write(f"**Method:** {row['method']}")
+                            st.write(f"**Incremental:** {row['incremental']}")
+                            if row.get("validation_valid") is not None:
+                                status = "PASS" if row["validation_valid"] else "FAIL"
+                                st.write(f"**Validation:** {status}")
+                            if row.get("validation_errors"):
+                                st.error(row["validation_errors"])
+                        if row.get("extracted_fields") and row["extracted_fields"] != "{}":
+                            try:
+                                fields_dict = _json.loads(row["extracted_fields"])
+                                if fields_dict:
+                                    st.write("**Extracted fields:**")
+                                    st.json(fields_dict)
+                            except Exception:
+                                pass
+
+        st.session_state["active_collection"] = batch_collection
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

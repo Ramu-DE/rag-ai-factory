@@ -1,0 +1,67 @@
+# Custom Document Skill — Purchase Order
+# Usage:
+#   from rag_factory.skills.custom import CustomSkill
+#   skill  = CustomSkill.from_yaml("skills/purchase_order.yaml")
+#   result = skill.run(extracted_doc)
+#   print(result.fields["po_number"], result.fields["total"])
+
+name: purchase_order
+doc_type: purchase_order
+description: "Extracts structured fields from purchase orders"
+required_fields:
+  - po_number
+  - vendor
+  - total
+
+fields:
+  - name: po_number
+    description: "Purchase Order number or reference ID"
+    example: "PO-2024-001"
+
+  - name: vendor
+    description: "Vendor or supplier company name"
+    example: "Acme Supplies Ltd"
+
+  - name: vendor_address
+    description: "Vendor mailing or billing address"
+
+  - name: buyer
+    description: "Buyer or purchasing company name"
+
+  - name: order_date
+    description: "Date the purchase order was issued"
+    example: "2024-01-15"
+
+  - name: delivery_date
+    description: "Expected or required delivery date"
+
+  - name: delivery_address
+    description: "Delivery or ship-to address"
+
+  - name: payment_terms
+    description: "Payment terms such as Net 30, Net 60, immediate"
+    example: "Net 30"
+
+  - name: currency
+    description: "Currency code for amounts"
+    example: "USD"
+
+  - name: subtotal
+    description: "Subtotal before tax and shipping"
+    example: "$4,500.00"
+
+  - name: tax
+    description: "Tax amount applied"
+
+  - name: shipping
+    description: "Shipping or freight charges"
+
+  - name: total
+    description: "Total order amount including all charges"
+    example: "$4,950.00"
+
+  - name: approved_by
+    description: "Name or title of the authorising signatory"
+
+  - name: notes
+    description: "Special instructions, comments, or delivery notes"

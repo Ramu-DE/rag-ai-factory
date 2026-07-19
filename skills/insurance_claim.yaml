@@ -1,0 +1,61 @@
+# Custom Document Skill — Insurance Claim
+# Handles: health, auto, property, life insurance claims
+
+name: insurance_claim
+doc_type: insurance_claim
+description: "Extracts structured fields from insurance claim forms"
+required_fields:
+  - claim_number
+  - policy_number
+  - claimant_name
+  - incident_date
+
+fields:
+  - name: claim_number
+    description: "Unique claim reference or tracking number"
+    example: "CLM-2024-789012"
+
+  - name: policy_number
+    description: "Insurance policy number"
+    example: "POL-2021-445566"
+
+  - name: insurer_name
+    description: "Name of the insurance company"
+
+  - name: claimant_name
+    description: "Full name of the person filing the claim"
+
+  - name: claimant_dob
+    description: "Date of birth of the claimant"
+
+  - name: claimant_contact
+    description: "Phone number or email of claimant"
+
+  - name: incident_date
+    description: "Date the incident, accident or loss occurred"
+    example: "2024-03-10"
+
+  - name: incident_type
+    description: "Type of incident: accident, theft, fire, flood, illness, etc."
+
+  - name: incident_description
+    description: "Brief description of the incident"
+
+  - name: claim_amount
+    description: "Total amount claimed"
+    example: "$12,500.00"
+
+  - name: currency
+    description: "Currency of the claim amount"
+
+  - name: bank_account
+    description: "Bank account or payment details for reimbursement"
+
+  - name: adjuster_name
+    description: "Name of the claims adjuster handling this claim"
+
+  - name: status
+    description: "Current claim status: submitted, under review, approved, rejected"
+
+  - name: supporting_docs
+    description: "List of supporting documents attached to the claim"

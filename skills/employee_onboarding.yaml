@@ -1,0 +1,57 @@
+# Custom Document Skill — Employee Onboarding Form
+# Handles: new hire forms, employment contracts, tax forms (W-4, P45), background check releases
+
+name: employee_onboarding
+doc_type: employee_onboarding
+description: "Extracts structured fields from employee onboarding and HR documents"
+required_fields:
+  - employee_name
+  - job_title
+  - start_date
+
+fields:
+  - name: employee_name
+    description: "Full legal name of the new employee"
+
+  - name: employee_id
+    description: "Employee ID or staff number assigned"
+
+  - name: job_title
+    description: "Job title or position"
+
+  - name: department
+    description: "Department or business unit"
+
+  - name: manager_name
+    description: "Name of the direct line manager"
+
+  - name: start_date
+    description: "Employment start date"
+    example: "2024-04-01"
+
+  - name: employment_type
+    description: "Full-time, part-time, contract, temporary"
+
+  - name: salary
+    description: "Annual or hourly salary or compensation"
+
+  - name: work_location
+    description: "Office location, remote, or hybrid"
+
+  - name: national_id
+    description: "National Insurance, Social Security, or tax ID number"
+
+  - name: bank_account
+    description: "Bank account details for payroll"
+
+  - name: emergency_contact
+    description: "Emergency contact name and phone number"
+
+  - name: probation_period
+    description: "Probation period duration if applicable"
+
+  - name: notice_period
+    description: "Notice period required by employment contract"
+
+  - name: benefits
+    description: "Benefits enrolled: health, dental, pension, stock options"

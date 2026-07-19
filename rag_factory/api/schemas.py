@@ -80,3 +80,69 @@ class HealthResponse(BaseModel):
     status          : str = "ok"
     manifest_size   : int = 0
     temporal        : bool = False
+
+
+# ── IDP schemas ───────────────────────────────────────────────────────────────
+class IDPClassifyRequest(BaseModel):
+    text        : str           = Field(..., description="Document text to classify")
+    filename    : str           = Field("", description="Original filename for filename-based hints")
+
+
+class IDPClassifyResponse(BaseModel):
+    doc_type        : str
+    confidence      : float
+    heuristic       : bool
+    reason          : str
+    extraction_mode : str
+
+
+class IDPProcessRequest(BaseModel):
+    collection_name   : str            = Field(..., description="Target Qdrant collection")
+    doc_type_override : Optional[str]  = None
+    extraction_mode   : str            = "auto"
+    chunk_size        : int            = Field(400, ge=100, le=1500)
+    force_reindex     : bool           = False
+    tenant_id         : Optional[str]  = None
+
+
+class IDPFileResult(BaseModel):
+    file_name       : str
+    doc_type        : str
+    confidence      : float
+    is_scanned      : bool
+    method          : str
+    pages_total     : int
+    pages_added     : int
+    pages_updated   : int
+    pages_skipped   : int
+    chunks_embedded : int
+    chunks_deleted  : int
+    elapsed_ms      : int
+    incremental     : bool
+    fields          : Dict[str, str]           = {}
+    tables          : List[Dict[str, Any]]     = []
+    extraction_confidence : Optional[float]    = None
+    validation_valid      : Optional[bool]     = None
+    validation_errors     : List[str]          = []
+    validation_warnings   : List[str]          = []
+    error           : Optional[str]            = None   # set if this file failed
+
+
+class IDPBatchResponse(BaseModel):
+    collection_name : str
+    files_submitted : int
+    files_succeeded : int
+    files_failed    : int
+    total_pages     : int
+    total_chunks    : int
+    elapsed_ms      : int
+    results         : List[IDPFileResult]
+
+
+class IDPCollectionStats(BaseModel):
+    collection_name : str
+    total_chunks    : int
+    indexed_pages   : int
+    last_processed  : Optional[str]
+    doc_id          : Optional[str]
+    doc_types_seen  : List[str]     = []
