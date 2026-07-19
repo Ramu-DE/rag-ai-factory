@@ -109,10 +109,10 @@ _MONTH_MAP = {
     "october": "10", "november": "11", "december": "12",
 }
 
-# Currency amounts
+# Currency amounts — \d+ captures whole numbers like 1800 without false splits
 _AMOUNT_PAT = re.compile(
     r"(?:(?:USD|EUR|GBP|CAD|AUD|INR|JPY)\s*)?"
-    r"[\$€£₹¥]?\s*(\d{1,3}(?:,\d{3})*(?:\.\d{1,4})?|\d+(?:\.\d{1,4})?)"
+    r"[\$€£₹¥]?\s*(\d{1,3}(?:,\d{3})+(?:\.\d{1,4})?|\d+(?:\.\d{1,4})?)"
     r"\s*(?:USD|EUR|GBP|CAD|AUD|INR|JPY)?",
     re.I,
 )
@@ -181,9 +181,14 @@ def _normalize_date(m: re.Match, fmt: str) -> Tuple[str, float]:
         if fmt == "iso":
             y, mo, d = int(g[0]), int(g[1]), int(g[2])
         elif fmt == "us":
-            mo, d, y = int(g[0]), int(g[1]), int(g[2])
+            mo_raw, d_raw, y = int(g[0]), int(g[1]), int(g[2])
             if y < 100:
                 y += 2000 if y < 50 else 1900
+            # If parsed month > 12 it's actually DD/MM/YYYY — swap
+            if mo_raw > 12 and d_raw <= 12:
+                mo, d = d_raw, mo_raw
+            else:
+                mo, d = mo_raw, d_raw
         elif fmt == "long_mdy":
             mo = int(_MONTH_MAP.get(g[0].lower()[:3], "0"))
             d, y = int(g[1]), int(g[2])
@@ -294,6 +299,15 @@ class NERNormalizer:
                 norm = _normalize_amount(raw)
                 _add("AMOUNT", m, norm, 0.88 if has_sym else 0.72)
 
+        # ── NPI (before phone — 10-digit NPI would otherwise match PHONE) ────
+        for m in _NPI_PAT.finditer(text):
+            _add("ID_NUMBER", m, f"NPI:{m.group(1)}", 0.95)
+
+        # ── ICD-10 codes ───────────────────────────────────────────────────────
+        for m in _ICD_PAT.finditer(text):
+            code = m.group(1) + ("." + m.group(2) if m.group(2) else "")
+            _add("ICD_CODE", m, code.upper(), 0.90)
+
         # ── Phone numbers ──────────────────────────────────────────────────────
         for m in _PHONE_PAT.finditer(text):
             norm = _normalize_phone(m)
@@ -302,15 +316,6 @@ class NERNormalizer:
         # ── Emails ────────────────────────────────────────────────────────────
         for m in _EMAIL_PAT.finditer(text):
             _add("EMAIL", m, m.group(0).lower(), 0.98)
-
-        # ── ICD-10 codes ───────────────────────────────────────────────────────
-        for m in _ICD_PAT.finditer(text):
-            code = m.group(1) + ("." + m.group(2) if m.group(2) else "")
-            _add("ICD_CODE", m, code.upper(), 0.90)
-
-        # ── NPI ────────────────────────────────────────────────────────────────
-        for m in _NPI_PAT.finditer(text):
-            _add("ID_NUMBER", m, f"NPI:{m.group(1)}", 0.95)
 
         # ── Organizations ──────────────────────────────────────────────────────
         for m in _ORG_SUFFIXES.finditer(text):

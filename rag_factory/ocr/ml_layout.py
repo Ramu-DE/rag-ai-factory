@@ -245,11 +245,9 @@ def _heuristic(f: Dict[str, float]) -> Optional[LayoutResult]:
 
     # Paragraph text: dense uniform words, no numbers, no colons → single column
     # Also catches uniform-grid synthetic text that tricks DBSCAN into many columns
+    _multi_signal = (f["cx_std"] > 0.25 and bim > 0.70) or (cols >= 3 and f["cx_std"] > 0.22 and bim > 0.55)
     if n > 50 and num < 0.06 and colon < 0.06:
-        # True multi-column has large x-std AND clear bimodal gap (no words near centre)
-        if f["cx_std"] > 0.25 and bim > 0.75:
-            pass   # let MULTI_COLUMN rule below handle it
-        else:
+        if not _multi_signal:
             return LayoutResult(SINGLE_COLUMN, 0.80, f,
                 f"Dense text, no numeric/colon signals: n={int(n)}, cx_std={f['cx_std']:.2f}")
 
@@ -257,6 +255,11 @@ def _heuristic(f: Dict[str, float]) -> Optional[LayoutResult]:
     if cols >= 2 and bim > 0.70 and f["cx_std"] > 0.25:
         return LayoutResult(MULTI_COLUMN, 0.85, f,
             f"DBSCAN found {int(cols)} columns, bimodal_ratio={bim:.0%}")
+
+    # Three-or-more column signal (middle columns straddle midpoint → lower bimodal)
+    if cols >= 3 and f["cx_std"] > 0.22 and bim > 0.55:
+        return LayoutResult(MULTI_COLUMN, 0.80, f,
+            f"DBSCAN found {int(cols)} columns (3+), cx_std={f['cx_std']:.2f}")
 
     return None   # inconclusive
 
