@@ -44,7 +44,7 @@ _RULES: Dict[str, List[Dict]] = {
         {"type": "required",      "field": "total_amount"},
         {"type": "required",      "field": "invoice_date"},
         {"type": "regex",         "field": "invoice_date",   "pattern": _DATE_RE,   "message": "invoice_date format unrecognised"},
-        {"type": "regex",         "field": "total_amount",   "pattern": _AMOUNT_RE, "message": "total_amount does not look like a monetary value"},
+        {"type": "regex",         "field": "total_amount",   "pattern": _AMOUNT_RE, "message": "total_amount does not look like a monetary value", "severity": "warning"},
         {"type": "cross_field",   "field": "due_date",       "requires": "invoice_date", "message": "due_date present but invoice_date missing"},
     ],
     "contract": [
@@ -101,7 +101,11 @@ class FieldValidator:
                 if val and val.lower() not in ("n/a","none","unknown"):
                     pattern = rule["pattern"]
                     if not pattern.search(val):
-                        warnings.append(rule.get("message", f"{fname}: value '{val}' did not match expected format"))
+                        msg = rule.get("message", f"{fname}: value '{val}' did not match expected format")
+                        if rule.get("severity", "error") == "warning":
+                            warnings.append(msg)
+                        else:
+                            errors.append(msg)
 
             elif rtype == "numeric_range":
                 if val:
