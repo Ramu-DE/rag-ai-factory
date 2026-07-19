@@ -1,0 +1,221 @@
+{
+  "collection": "test_idp_e2e",
+  "pages": {
+    "10": {
+      "hash": "426552d16f50804b37a6073530bb7f63d04ef2717c010ed51039c2032a1727e4",
+      "chunk_ids": [
+        "44a0eaa8-562a-1d56-9967-810f3d9866d9",
+        "ba4161aa-c5c3-e28b-76c6-37403f79bcce",
+        "294d041c-d0dc-bafa-7a13-5af12b23585b",
+        "84a77b47-587c-abe8-869f-f05d72f9d46f",
+        "a8c55731-7339-46b2-0533-cc426104c169",
+        "9fd5d3bd-89c3-1c46-6be2-98b6d1be4396"
+      ],
+      "char_count": 1971
+    },
+    "11": {
+      "hash": "41e735a0c1e37b98a1e8bfcf4fdfd1dbe8a8dfb69763e1efbd9aed07a21c0604",
+      "chunk_ids": [
+        "73bc27ea-a5ac-c281-74f4-7b4e8c88ac31",
+        "cd3d0102-f39c-4226-b030-a2c01d34b773",
+        "c0e5b632-d3e5-9ea3-2c36-032fa5c98945",
+        "655526f1-8b73-1412-19e2-9aaed4faaf14",
+        "6e001952-3fd1-1245-d6eb-ce4a52bf2153",
+        "6873682d-8f96-2f84-a074-17d916572271",
+        "b0f6d3fe-670a-74e6-83db-ef7affd16bd9",
+        "8e93586e-5f43-7bdd-0f93-9f861cf26e3b",
+        "58a01524-f1f9-09f2-3314-f225043683af",
+        "84797bfb-dead-d099-5f2b-adf825153b77",
+        "e97fe61d-073e-55fd-eaa8-bfa2028c2dfa",
+        "1c33158b-59c9-4d0c-f280-516cd1c9e8fd",
+        "72f27263-f175-33ba-5b8c-068aa7c2b949"
+      ],
+      "char_count": 4329
+    },
+    "12": {
+      "hash": "84803cc6ddb152d5dbe38a60a71ba3da621a4e5689280a8ad4d53eeb541d4361",
+      "chunk_ids": [
+        "fdec931f-7e12-18a6-5598-732e9de846d3",
+        "da623a5f-9145-ffbe-dcc3-c9726b16e011",
+        "c797f2b8-1b31-3371-0d04-45c2ad96be2d",
+        "32d32823-7e92-65ec-4e1d-f44e6ed5140b",
+        "45e6f9e5-2395-0144-7e23-8302c7642e57",
+        "aaa026f3-e332-8dd9-aa05-0d6fae84b4f9",
+        "1adf34f5-14a5-1b80-1ccf-a49476dfde61",
+        "ac04892c-3cca-1707-0a13-10bcc4de1607",
+        "36b72eee-1d55-badf-449d-3ee0649fce12",
+        "d9831d4c-1672-e82d-58d2-c533adbf1dad"
+      ],
+      "char_count": 3453
+    },
+    "13": {
+      "hash": "977f0f203ac0f27778eba2d5a58b0d559531aa5a38489507de6cd75c55f97bfe",
+      "chunk_ids": [
+        "f3a0b148-1681-6650-907d-ccbd7418881d",
+        "0dfe0674-4f33-92f9-0363-6e2733f5f80e",
+        "6b405e86-fb61-a5e5-6bbb-a778145ef8dc",
+        "22cd09d2-bca0-cd52-02ef-70c1328e5e77",
+        "13a2cb44-9353-8208-c137-bdf1bdc6b75e",
+        "74d7c21e-0f8c-f39b-bf60-024c9b5091e2",
+        "7b0ce236-6950-2359-81e2-868cc1f4c131",
+        "1ba4b1ac-1ca4-9c87-87d2-1813f9c2852b",
+        "4737283c-2c53-3cca-a42c-172b40cfc06e",
+        "30460732-2e32-bd06-a587-d4bdf19577e0",
+        "ff92944d-0583-fca8-76cc-2fd10d051a61"
+      ],
+      "char_count": 3630
+    },
+    "14": {
+      "hash": "e6e42de0a61d2d0018d82224ced5664cbbbfe97a8b5faee237ba5733a6907f46",
+      "chunk_ids": [
+        "4593a774-1ae4-ef99-796f-cc058da3f37e",
+        "61b6a352-5703-c05a-4def-28b67149c689",
+        "75471567-7f25-10ea-fd0e-47d1d0a79f4b",
+        "b8d74a03-687a-2d48-dd06-954e6027120f",
+        "145848c1-f297-0396-feda-9e40afcee3bf",
+        "d9be7f98-beee-60b5-60c2-541d5ce16427",
+        "f0fa10fb-c17a-369c-03b2-b01f0249a69d"
+      ],
+      "char_count": 2369
+    },
+    "0": {
+      "hash": "f5d33e2f46f0c11dfff324c9435d30c6f58e066a0e51365cd448c416b4f16ba9",
+      "chunk_ids": [
+        "e13cc101-1604-0463-1a29-25a6dbe2cb0b",
+        "34404b86-b163-1d8d-7203-e68e24eb6f49",
+        "f2dffc63-4ec4-bab2-a5dd-af5ad48ccf87",
+        "48e8e8f9-04ac-187d-5215-ebd838c806e3",
+        "efb0681f-ab5c-3da3-28f0-dbd3c2d26965",
+        "3e981f10-e345-0a6e-4f34-4bc9e9f8d6b4",
+        "92e8bcac-e824-18cb-ed52-ecc3a502c998",
+        "1d4db73e-bcbe-3b6f-67b9-e3f5900e80f0",
+        "b43b381e-fc83-ccbf-c1e6-ae6d04f2ce52",
+        "4b237bc9-cc6d-22b9-efa8-c834ffbb710a",
+        "531ac142-7994-301e-3213-52792c701013"
+      ],
+      "char_count": 3640
+    },
+    "1": {
+      "hash": "e436a4d9f009f6e20d9b4e4af349f6722b37c0f121e02217e17cf73c26df2b4e",
+      "chunk_ids": [
+        "5edd67b5-3505-6609-e5ab-86392d082e7e",
+        "ff9ee4bb-188f-c6ab-9f96-06965ac57440",
+        "aae5bba8-ef06-fb87-c840-3b139d979cc3",
+        "65617b57-9d7e-541a-f9be-d8e81f7b1d3b",
+        "b9e332a7-b951-c324-e1a9-9e09ebc2a606",
+        "5d34cfdd-0550-762b-15ca-90ad8b97cddb",
+        "90bbb730-46b3-899e-14d8-70ea37354de6",
+        "20d90b4f-4a11-9d0e-9c77-3223428d7383",
+        "46ae0d9f-f9f6-843d-c69f-14d39b1aa1f1",
+        "5c69c681-526a-6766-1b1f-87d7f794662c",
+        "9deeea2f-1481-7078-2354-026a708eaf72",
+        "a2258c34-bc30-0795-0cd6-a57b506082e7"
+      ],
+      "char_count": 4023
+    },
+    "2": {
+      "hash": "89b458f41bcbbc7a3155f4884399f45f51bcb867c27e26475e5f612c2e347f1a",
+      "chunk_ids": [
+        "9b8c61e6-7a81-0563-3ee4-a39f735f4166",
+        "92dec74b-55da-5c67-5aec-d791efe4b05b",
+        "fe4e5437-e944-3e33-4e7b-57f2f2fb558f",
+        "0b14018a-d0a1-0815-3179-d7fe745ec121",
+        "33019081-b20c-a6d5-17f2-f3c5fb3dc4c5",
+        "58958e00-8335-1d6d-bc46-910529f500ed",
+        "dd387ea6-d040-444f-3d68-95437ebc917c",
+        "83a1199c-c239-277e-76b2-4cd8c9a8284a",
+        "0ef8b2b9-dd80-d906-08ad-b1fec8f52229",
+        "5a5fb078-e8f1-3bfe-2561-59794c7dfdcb",
+        "7e559244-3516-9688-cb90-5f5578ea1250"
+      ],
+      "char_count": 3853
+    },
+    "3": {
+      "hash": "af7109f888ae5109e9361bd7171492e6a46d08705c739714a1e27bef2d218048",
+      "chunk_ids": [
+        "4e98a935-5c8a-8241-af5f-74622c31fe96",
+        "bb118e90-d50d-449d-b43d-9999b034204e",
+        "7f15e4ca-9549-6bc3-1509-10ceb9e3de03",
+        "93b7716d-0318-3222-8072-4f3dd9c8f438",
+        "de8a8fb2-85e7-915a-dc89-a0865dc16c63"
+      ],
+      "char_count": 1670
+    },
+    "4": {
+      "hash": "9acc8ea456994c802c89a462133886cc49d12e67a1552598dea74961d6f46152",
+      "chunk_ids": [
+        "3204f8a7-32b5-764f-c7b6-883ae21aa766",
+        "eb70a456-0781-66f3-9e42-100cbcda6cf4",
+        "23a4d13f-31fb-0cdb-378b-80ed28252be8"
+      ],
+      "char_count": 797
+    },
+    "5": {
+      "hash": "25024489d809ca8dfcea1d5edab08cc09b7a1ac5d45f379e1add19080d608c7e",
+      "chunk_ids": [
+        "207d3fdc-6662-17b2-9f9d-46b4f32cb44a",
+        "527c9408-452b-ec83-dda3-caaa22b02217",
+        "a2a7f046-0231-b125-699e-225010455b07",
+        "12513bba-0359-2587-8662-8bd0e632e14b"
+      ],
+      "char_count": 1360
+    },
+    "6": {
+      "hash": "cfef34b7fdf3e285985cd081cc6a1a94d945ca8ee0965820727076cf6984f685",
+      "chunk_ids": [
+        "27f83c50-179c-ee75-69a5-046210038f97",
+        "8174d898-a5b1-d2eb-d475-12894b9f7cbc",
+        "899c1358-85e4-3442-4cd3-5ca9d963f499",
+        "caaf2622-7027-95e0-6056-5f037053c6a6",
+        "95cdd17c-788e-04ef-5f73-e1ce9f648695",
+        "bc17e8ec-1867-9074-82b4-f02d69633ada",
+        "37f4155e-72f0-c32e-eccb-43accc162c2c",
+        "49ce6406-4321-6eb5-949c-e941e567b7cb",
+        "94daf604-39fa-1309-4bee-1fc2132e4172"
+      ],
+      "char_count": 3114
+    },
+    "7": {
+      "hash": "ffa02706844eba55a7d80014bd2da7387844e111e43594f8a4794b75b10a0807",
+      "chunk_ids": [
+        "b9407609-c064-78c1-a431-a68714123e04",
+        "2e205526-5266-058a-b3a6-70327317ab8c",
+        "af8ca4d5-4ab8-1dca-c916-2a2ab55852c0",
+        "d5117da3-5ea8-9a73-795c-c3601486d9e1",
+        "53f83872-0bca-07cc-836e-49d4cdc24c55"
+      ],
+      "char_count": 1692
+    },
+    "8": {
+      "hash": "b77dfae92c40c675cefc030563750ba05bb73fa6467f8fbbc4ce1b10bb824ed5",
+      "chunk_ids": [
+        "5dc4a296-30d1-9d0f-b3c4-4c2b035bf5c9",
+        "03264140-830d-32e1-b73c-d2e87be6af15",
+        "6dbd8b5b-30d6-c40d-51b4-f6eec98f1588",
+        "dabe9edc-15d3-eae9-35c5-9952753052bd",
+        "8a952b23-b294-12d5-51c9-9f079885c1d5",
+        "37549f68-3872-db92-917c-1a09cf394d50",
+        "3fbc5af6-3a73-c4c8-b789-f935863e1af7",
+        "d1ab54f4-868e-0841-4fdf-0b604ccb4316",
+        "46bbd67e-388e-36f2-369f-5d4320da263f"
+      ],
+      "char_count": 2936
+    },
+    "9": {
+      "hash": "0d6522c67fb19de90962dc33efc6886931fd88ead43a52bb1e9e56b5acd03b12",
+      "chunk_ids": [
+        "531c9f66-0668-aeab-31ec-d8fba7530428",
+        "d7752d6d-c890-101f-5c0d-9c1dd4eddb49",
+        "3babdbef-d0b8-a772-f9f5-51466abf91d3",
+        "7f53d6da-861e-aa72-b8b0-3a7f277568a7",
+        "4dbc8ac0-1b4b-dc03-941d-80d7987395de",
+        "5da64886-82f0-6e1b-f088-04e65cd74449",
+        "37f35445-56a5-e7bf-219b-90fbb3bab979"
+      ],
+      "char_count": 2321
+    }
+  },
+  "doc_id": "PATIENT_INFORMATION_SYSTEMS.pdf",
+  "total_pages": 15,
+  "last_processed": "2026-07-19T04:16:36.242027"
+}

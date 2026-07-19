@@ -1,0 +1,78 @@
+{
+  "collection": "test_batch_all",
+  "pages": {
+    "1": {
+      "hash": "a5a2960fdf0cad13d4c4187fc36b5d996524c3aad510daf4c6f6cd84d7486442",
+      "chunk_ids": [
+        "c8ec0113-0f22-0700-05dc-fbaeec275749"
+      ],
+      "char_count": 77
+    },
+    "3": {
+      "hash": "65a6eb622417f7e866c0c523bb0db5b9a768fe2d6ce32fe106787ff089501f21",
+      "chunk_ids": [
+        "47d900a4-5a31-8365-be8f-0e77d1d68d4d"
+      ],
+      "char_count": 72
+    },
+    "5": {
+      "hash": "4ffe7de3e7abbc9abc3670fa34f5bdc2f7dc4be14e6d3407aca07dc0808a1af2",
+      "chunk_ids": [
+        "d929951a-f6e4-f593-665a-bdfbbd5570f4"
+      ],
+      "char_count": 70
+    },
+    "6": {
+      "hash": "b8d36cf5c2c6e4c620e852fd25845f1df7940044cdb627df1d1161d5865bf58a",
+      "chunk_ids": [
+        "753659ed-68b0-8bbd-1269-37b61c0ba012"
+      ],
+      "char_count": 74
+    },
+    "7": {
+      "hash": "47a82822b19259317bed933c2fe6d99040a94a42837dbb1033fac1df2c2b8570",
+      "chunk_ids": [
+        "fc0972e1-da6c-42df-77d4-db04b2498410"
+      ],
+      "char_count": 72
+    },
+    "8": {
+      "hash": "3ad183232bb1c32246b082241f6990dd735025e748350219214f9fbccdf23fb1",
+      "chunk_ids": [
+        "52790696-cf39-3d88-27b5-ca48c3e40b2f"
+      ],
+      "char_count": 64
+    },
+    "9": {
+      "hash": "46527d87409404d245be402e7337386fde9011a64d3685dafd0d04a50d340fb1",
+      "chunk_ids": [
+        "71353c7b-cb1f-9bac-5451-c91bf327e61c"
+      ],
+      "char_count": 69
+    },
+    "2": {
+      "hash": "b1cf8c0f16844e9c222235ceb4c6ccfe49d8bfe31ad1659c8aef1a3212ecf855",
+      "chunk_ids": [
+        "36ca2d8b-7975-4170-7893-fa0c2db14b7f"
+      ],
+      "char_count": 96
+    },
+    "0": {
+      "hash": "57c3487e08e8fb6a984f23eec2863d6615daec3413747be42922fe0f090f5b6a",
+      "chunk_ids": [
+        "48346747-c42a-12bc-3c0d-ca8d8f3ba03c"
+      ],
+      "char_count": 105
+    },
+    "4": {
+      "hash": "9219a576133db6972104e5bbd6b0dd09825735824a8d7cfd243b9d84e86635cd",
+      "chunk_ids": [
+        "c8eb701d-7f8a-1b5b-7d6f-6938817b89a5"
+      ],
+      "char_count": 105
+    }
+  },
+  "doc_id": "synthetic_v5.pdf",
+  "total_pages": 10,
+  "last_processed": "2026-07-19T04:18:36.890249"
+}

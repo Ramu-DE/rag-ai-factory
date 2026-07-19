@@ -1,0 +1,78 @@
+{
+  "collection": "test_incremental",
+  "pages": {
+    "1": {
+      "hash": "a5a2960fdf0cad13d4c4187fc36b5d996524c3aad510daf4c6f6cd84d7486442",
+      "chunk_ids": [
+        "d04d2cb8-0d37-0ec8-4fb4-f3fffec7f4fe"
+      ],
+      "char_count": 77
+    },
+    "2": {
+      "hash": "b1cf8c0f16844e9c222235ceb4c6ccfe49d8bfe31ad1659c8aef1a3212ecf855",
+      "chunk_ids": [
+        "358d4aa0-2e15-fc4e-35a3-05daf630d3e8"
+      ],
+      "char_count": 96
+    },
+    "3": {
+      "hash": "65a6eb622417f7e866c0c523bb0db5b9a768fe2d6ce32fe106787ff089501f21",
+      "chunk_ids": [
+        "fb242b07-df35-fced-e84d-f606e624bcfb"
+      ],
+      "char_count": 72
+    },
+    "5": {
+      "hash": "4ffe7de3e7abbc9abc3670fa34f5bdc2f7dc4be14e6d3407aca07dc0808a1af2",
+      "chunk_ids": [
+        "fc60cab3-247c-e1d2-05f6-8584feec9680"
+      ],
+      "char_count": 70
+    },
+    "6": {
+      "hash": "b8d36cf5c2c6e4c620e852fd25845f1df7940044cdb627df1d1161d5865bf58a",
+      "chunk_ids": [
+        "30309460-f8fd-560a-e13a-1fca647a90b2"
+      ],
+      "char_count": 74
+    },
+    "7": {
+      "hash": "47a82822b19259317bed933c2fe6d99040a94a42837dbb1033fac1df2c2b8570",
+      "chunk_ids": [
+        "c67fe052-d4ee-a7b3-f9fb-94ba0452404f"
+      ],
+      "char_count": 72
+    },
+    "8": {
+      "hash": "3ad183232bb1c32246b082241f6990dd735025e748350219214f9fbccdf23fb1",
+      "chunk_ids": [
+        "21a308d9-2655-9183-ee74-2996e65c0903"
+      ],
+      "char_count": 64
+    },
+    "9": {
+      "hash": "46527d87409404d245be402e7337386fde9011a64d3685dafd0d04a50d340fb1",
+      "chunk_ids": [
+        "b9ea1b2a-b562-3773-25fd-a6efd9a6d454"
+      ],
+      "char_count": 69
+    },
+    "0": {
+      "hash": "57c3487e08e8fb6a984f23eec2863d6615daec3413747be42922fe0f090f5b6a",
+      "chunk_ids": [
+        "b27957e3-86a6-60fd-bdc6-776db9d3889b"
+      ],
+      "char_count": 105
+    },
+    "4": {
+      "hash": "9219a576133db6972104e5bbd6b0dd09825735824a8d7cfd243b9d84e86635cd",
+      "chunk_ids": [
+        "980312cd-7ead-8c94-0445-d75205880471"
+      ],
+      "char_count": 105
+    }
+  },
+  "doc_id": "synth4",
+  "total_pages": 10,
+  "last_processed": "2026-07-19T04:15:04.519480"
+}
