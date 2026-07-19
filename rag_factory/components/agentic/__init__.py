@@ -22,16 +22,18 @@ class CorrectiveRAG(BaseComponent):
         log    = []
 
         # Score each chunk for relevance
+        import re as _re
         good, bad = [], []
         for ch in chunks:
             score_raw = llm_call(
                 f"Query: {query}\nPassage: {ch.get('text','')[:300]}\n\n"
-                "Relevance score 0.0-1.0 (number only):",
-                max_tokens=5,
+                "Reply with a single decimal number 0.0-1.0 for relevance. No explanation.",
+                max_tokens=20, temperature=0.0,
             )
+            nums = _re.findall(r"[01](?:\.\d+)?|\.\d+", score_raw.strip())
             try:
-                score = float(score_raw.strip())
-            except ValueError:
+                score = min(1.0, max(0.0, float(nums[0]))) if nums else 0.0
+            except (ValueError, IndexError):
                 score = 0.0
             (good if score >= self.threshold else bad).append((score, ch))
             log.append({"text_preview": ch.get("text","")[:60], "score": score})

@@ -61,14 +61,17 @@ class GenerationGuard(BaseComponent):
         context = " ".join(c.get("text","") for c in chunks)
 
         # FM-G1: Basic faithfulness check
+        import re as _re
         faith_raw = llm_call(
             f"Context: {context[:800]}\nAnswer: {answer[:400]}\n\n"
-            "Score 0.0-1.0 how well the answer is supported by the context (number only):",
-            max_tokens=5,
+            "Reply with a single decimal number 0.0-1.0 scoring how well "
+            "the answer is supported by the context. No explanation.",
+            max_tokens=20, temperature=0.0,
         )
+        nums = _re.findall(r"[01](?:\.\d+)?|\.\d+", faith_raw.strip())
         try:
-            faith = float(faith_raw.strip())
-        except ValueError:
+            faith = min(1.0, max(0.0, float(nums[0]))) if nums else 0.5
+        except (ValueError, IndexError):
             faith = 0.5
 
         if faith < 0.6:

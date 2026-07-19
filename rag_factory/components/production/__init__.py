@@ -185,29 +185,39 @@ class EvaluationRAG(BaseComponent):
         ground_truth = ctx["ground_truth"]
         context      = "\n\n".join(c.get("text","") for c in chunks)
 
+        import re as _re
+
         def score(prompt: str) -> float:
-            raw = llm_call(prompt, max_tokens=5)
-            try:
-                return min(1.0, max(0.0, float(raw.strip())))
-            except ValueError:
-                return 0.5
+            raw = llm_call(prompt, max_tokens=20, temperature=0.0)
+            # Accept any float in the response, e.g. "0.85", "Score: 0.9", "0.75\n"
+            nums = _re.findall(r"[01](?:\.\d+)?|\.\d+", raw.strip())
+            if nums:
+                try:
+                    return min(1.0, max(0.0, float(nums[0])))
+                except ValueError:
+                    pass
+            return 0.5
 
         faithfulness = score(
-            f"Context:\n{context}\nAnswer:\n{answer}\n\n"
-            "Score 0.0-1.0: how much of the answer is supported by context?"
+            f"Context:\n{context[:3000]}\nAnswer:\n{answer}\n\n"
+            "Reply with a single decimal number 0.0-1.0 scoring how much of "
+            "the answer is supported by the context. No explanation."
         )
         relevancy = score(
             f"Question: {query}\nAnswer: {answer}\n\n"
-            "Score 0.0-1.0: how relevant is the answer to the question?"
+            "Reply with a single decimal number 0.0-1.0 scoring how relevant "
+            "the answer is to the question. No explanation."
         )
         precision = score(
-            f"Question: {query}\nContext:\n{context}\n\n"
-            "Score 0.0-1.0: what fraction of the context is actually useful?"
+            f"Question: {query}\nContext:\n{context[:3000]}\n\n"
+            "Reply with a single decimal number 0.0-1.0 scoring what fraction "
+            "of the context is actually useful for answering the question. No explanation."
         )
         recall = score(
             f"Question: {query}\nGround truth: {ground_truth}\n"
-            f"Context:\n{context}\n\n"
-            "Score 0.0-1.0: how much ground-truth information is in the context?"
+            f"Context:\n{context[:3000]}\n\n"
+            "Reply with a single decimal number 0.0-1.0 scoring how much of "
+            "the ground-truth information is covered by the context. No explanation."
         )
         return {
             "faithfulness":       round(faithfulness, 3),

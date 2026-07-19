@@ -109,17 +109,19 @@ class RerankedRetrieval(BaseComponent):
         chunks = ctx["retrieved_chunks"]
         k      = ctx.get("top_k", 5)
 
+        import re as _re
         scored = []
         for ch in chunks:
             text  = ch.get("text", "")
             score = llm_call(
                 f"Query: {query}\nPassage: {text}\n\n"
-                "Rate relevance 0.0-1.0 (one number only):",
-                max_tokens=5,
+                "Reply with a single decimal number 0.0-1.0 for relevance. No explanation.",
+                max_tokens=20, temperature=0.0,
             )
+            nums = _re.findall(r"[01](?:\.\d+)?|\.\d+", score.strip())
             try:
-                s = float(score.strip())
-            except ValueError:
+                s = min(1.0, max(0.0, float(nums[0]))) if nums else 0.0
+            except (ValueError, IndexError):
                 s = 0.0
             scored.append((s, ch))
 
