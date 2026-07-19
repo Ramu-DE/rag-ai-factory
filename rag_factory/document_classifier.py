@@ -96,8 +96,19 @@ _LETTER_P = re.compile(
 class DocumentClassifier:
     """Auto-classify a document by content and recommend extraction mode."""
 
-    def classify(self, text: str) -> ClassificationResult:
-        """Classify document from its extracted text."""
+    def classify(self, text: str, filename: str = "") -> ClassificationResult:
+        """
+        Classify document from content + optional filename hint.
+        Filename is checked first for strong signals (invoice, contract, ID).
+        Content heuristic requires >= 4 keyword matches to avoid false positives
+        on general documents that incidentally mention medical/legal terms.
+        """
+        # Filename strong signal (filename beats content for clear cases)
+        if filename:
+            fn_result = self.classify_filename(filename)
+            if fn_result.confidence >= 0.80:
+                return fn_result
+
         result = self._heuristic(text)
         if result:
             return result
@@ -122,7 +133,8 @@ class DocumentClassifier:
             "Filename inconclusive.", "auto")
 
     def _heuristic(self, text: str) -> ClassificationResult | None:
-        t      = text[:3000]
+        # Use more text for better signal; general documents need more context
+        t      = text[:5000]
         scores = {
             "invoice":     len(_INVOICE_P.findall(t)),
             "contract":    len(_CONTRACT_P.findall(t)),
@@ -135,23 +147,25 @@ class DocumentClassifier:
         best_type  = max(scores, key=lambda k: scores[k])
         best_score = scores[best_type]
 
-        if best_score == 0:
-            return None   # no signal at all → LLM
+        # Minimum 4 keyword matches required to avoid false positives
+        # (general docs incidentally contain medical/legal words)
+        if best_score < 4:
+            return None   # too weak → LLM
 
-        # Require clear winner (at least 2x second-best)
+        # Require a clear winner: best must be >= 2x second-best
         sorted_scores = sorted(scores.values(), reverse=True)
         if len(sorted_scores) > 1 and sorted_scores[1] > 0:
             ratio = best_score / sorted_scores[1]
-            if ratio < 1.5:
+            if ratio < 2.0:
                 return None   # ambiguous → LLM
 
-        confidence = min(0.95, 0.60 + best_score * 0.05)
+        confidence = min(0.92, 0.65 + best_score * 0.03)
         mode       = _DOC_TYPE_TO_MODE[best_type]
         return ClassificationResult(
             doc_type=best_type,
             confidence=confidence,
             heuristic=True,
-            reason=f"Keyword signal: {best_score} {best_type} terms detected.",
+            reason=f"Keyword signal: {best_score} {best_type} terms detected (threshold>=4, ratio>=2x).",
             extraction_mode=mode,
         )
 

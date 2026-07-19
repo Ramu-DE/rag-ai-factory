@@ -283,14 +283,35 @@ with tab_idp:
                     # ── ingest metrics ────────────────────────────────────
                     st.subheader("Incremental Ingest")
                     ir = result.ingest_report
-                    c1,c2,c3,c4,c5 = st.columns(5)
-                    c1.metric("Pages",      ir.pages_total)
-                    c2.metric("Added",      ir.pages_added)
-                    c3.metric("Updated",    ir.pages_updated)
-                    c4.metric("Skipped",    ir.pages_skipped, help="Unchanged — zero embedding cost")
-                    c5.metric("Chunks",     ir.chunks_embedded)
                     badge = "INCREMENTAL" if ir.incremental else "FULL INDEX"
-                    st.caption(f"[{badge}] {ir.elapsed_ms}ms | collection: {ir.collection_name}")
+
+                    # Get total chunks in collection (includes previously indexed chunks)
+                    try:
+                        from rag_factory.components.base import get_qdrant_client
+                        _qc = get_qdrant_client()
+                        _cinfo = _qc.get_collection(ir.collection_name)
+                        total_chunks_in_coll = _cinfo.points_count
+                    except Exception:
+                        total_chunks_in_coll = ir.chunks_embedded
+
+                    c1,c2,c3,c4,c5,c6 = st.columns(6)
+                    c1.metric("Pages",           ir.pages_total)
+                    c2.metric("Added",           ir.pages_added)
+                    c3.metric("Updated",         ir.pages_updated)
+                    c4.metric("Skipped",         ir.pages_skipped,
+                              help="Unchanged pages — zero embedding cost")
+                    c5.metric("New chunks",      ir.chunks_embedded,
+                              help="Chunks embedded this run")
+                    c6.metric("Total in index",  total_chunks_in_coll,
+                              help="All chunks available for Q&A")
+
+                    if ir.incremental and ir.chunks_embedded == 0 and ir.pages_skipped == ir.pages_total:
+                        st.info(
+                            f"All {ir.pages_skipped} pages unchanged since last upload — "
+                            f"no re-embedding needed. {total_chunks_in_coll} chunks already in the index and ready for Q&A."
+                        )
+                    else:
+                        st.caption(f"[{badge}] {ir.elapsed_ms}ms | collection: {ir.collection_name}")
 
                     # ── extracted fields ──────────────────────────────────
                     if result.extraction:
@@ -312,7 +333,7 @@ with tab_idp:
                                   delta="HIGH" if conf >= 0.75 else "LOW — review recommended",
                                   delta_color=conf_color)
 
-                    # ── validation ────────────────────────────────────────
+                    # ── validation (only for skill doc types) ─────────────
                     if result.validation:
                         st.subheader("Field Validation")
                         vr = result.validation
@@ -323,6 +344,11 @@ with tab_idp:
                                 st.error(e)
                             for w in vr.warnings:
                                 st.warning(w)
+                    elif result.doc_type not in ("invoice","contract","medical","id_document"):
+                        st.info(
+                            f"Doc type **{result.doc_type}** — no structured field extraction "
+                            f"(no skill required). Document is indexed and fully queryable via Ask tab."
+                        )
 
                     # Store for Ask tab
                     st.session_state["active_collection"] = idp_collection

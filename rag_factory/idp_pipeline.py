@@ -110,6 +110,7 @@ class IDPPipeline:
 
         # ── 2. Classify ───────────────────────────────────────────────────
         from .document_classifier import CLASSIFIER
+        fname = os.path.basename(file_path)
         if doc_type_override:
             from .document_classifier import ClassificationResult, _DOC_TYPE_TO_MODE
             classification = ClassificationResult(
@@ -119,12 +120,12 @@ class IDPPipeline:
                 extraction_mode=_DOC_TYPE_TO_MODE.get(doc_type_override, "auto"),
             )
         else:
-            classification = CLASSIFIER.classify(extracted.full_text)
+            # Pass filename so classifier can use it as a strong prior
+            classification = CLASSIFIER.classify(extracted.full_text, filename=fname)
 
         doc_type = classification.doc_type
 
         # ── 3. Re-extract with correct Textract mode if needed ────────────
-        # E.g. first pass was "auto" (PyMuPDF), but doc is an invoice → re-run with Textract expense
         if (classification.extraction_mode in ("expense", "id")
                 and extracted.method == "pymupdf"):
             extracted = extract_document(
@@ -132,14 +133,15 @@ class IDPPipeline:
                 extraction_mode=classification.extraction_mode,
             )
 
-        # ── 4. Run skill ──────────────────────────────────────────────────
+        # ── 4. Run skill — only for doc types that have a skill ───────────
         from .skills.registry import get_skill
-        skill = get_skill(doc_type)
+        _SKILL_DOC_TYPES = {"invoice", "contract", "medical", "id_document"}
+        skill = get_skill(doc_type) if doc_type in _SKILL_DOC_TYPES else None
         extraction = skill.run(extracted) if skill else None
 
-        # ── 5. Validate ───────────────────────────────────────────────────
+        # ── 5. Validate — only when a skill ran ───────────────────────────
         from .field_validator import VALIDATOR
-        if extraction:
+        if extraction and doc_type in _SKILL_DOC_TYPES:
             validation = VALIDATOR.validate(
                 fields=extraction.fields,
                 doc_type=doc_type,
