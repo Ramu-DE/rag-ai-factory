@@ -59,7 +59,12 @@ _COMPARISON = re.compile(
     r"which is better|pros and cons|advantages|disadvantages)\b", re.I
 )
 _LISTING = re.compile(
-    r"\b(list all|enumerate|give me all|what are all|how many|summarise|summarize)\b", re.I
+    r"\b(list all|enumerate|give me all|what are all|how many)\b", re.I
+)
+_SUMMARY = re.compile(
+    r"\b(summarize|summarise|summarization|give me a summary|provide a summary|"
+    r"overview|key points|key takeaways|tl;?dr|what is this (about|document)|"
+    r"main (topic|finding|idea|point|theme))\b", re.I
 )
 _TEMPORAL = re.compile(
     r"\b(latest|recent|new|updated|changed|since|after \d{4}|before \d{4}|"
@@ -88,13 +93,14 @@ _CATEGORY_TO_SPEC = {
 
 # Routing decision table (used in Streamlit to display explanation)
 ROUTING_LOGIC = [
-    ("Comparison / contrast",    "production.yaml", "Needs query decomposition + hybrid RRF"),
-    ("Listing / enumerate",      "production.yaml", "Needs hybrid retrieval + self-RAG verification"),
-    ("Temporal / trend",         "production.yaml", "May need incremental index awareness"),
-    ("Step-by-step / how-to",    "production.yaml", "Needs chain-of-thought generation"),
-    ("Research / deep-dive",     "agentic.yaml",    "Multi-step ReAct loop, iterative gap detection"),
-    ("Negation",                 "simple.yaml",     "AmbiguityGuard rewrites before retrieval"),
-    ("Simple / factual",         "simple.yaml",     "Single-hop dense retrieval sufficient"),
+    ("Summarize / overview / key points", "simple.yaml",      "Single-pass global retrieval sufficient"),
+    ("Comparison / contrast",             "production.yaml",  "Needs query decomposition + hybrid RRF"),
+    ("Listing / enumerate",               "production.yaml",  "Needs hybrid retrieval + self-RAG verification"),
+    ("Temporal / trend",                  "production.yaml",  "May need incremental index awareness"),
+    ("Step-by-step / how-to",             "production.yaml",  "Needs chain-of-thought generation"),
+    ("Research / deep-dive",              "agentic.yaml",     "Multi-step ReAct loop, iterative gap detection"),
+    ("Negation",                          "simple.yaml",      "AmbiguityGuard rewrites before retrieval"),
+    ("Simple / factual",                  "simple.yaml",      "Single-hop dense retrieval sufficient"),
 ]
 
 
@@ -147,6 +153,11 @@ class QueryRouter:
     def _heuristic(self, query: str) -> Optional[RoutingResult]:
         q = query.strip()
 
+        if _SUMMARY.search(q):
+            return RoutingResult(
+                spec="simple.yaml", category="SIMPLE", confidence=0.88, heuristic=True,
+                reason="Summary/overview intent — single-pass global retrieval selected.",
+            )
         if _AGENTIC.search(q):
             return RoutingResult(
                 spec="agentic.yaml", category="AGENTIC", confidence=0.88, heuristic=True,

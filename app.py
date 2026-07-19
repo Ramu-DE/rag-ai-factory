@@ -684,9 +684,13 @@ with tab_ask:
     st.header("Ask a Question")
     st.caption("The router picks the optimal pipeline spec based on query intent — no manual spec selection needed.")
 
-    # Pre-fill collection from PDF upload tab
+    # Pre-fill collection from PDF/IDP upload tabs — sync session_state so widget stays in step
     default_coll = st.session_state.get("active_collection", "factory_pdf_demo")
-    active_pdf   = st.session_state.get("active_pdf", "")
+    if "ask_coll" not in st.session_state or st.session_state.get("_ask_coll_source") != default_coll:
+        st.session_state["ask_coll"]         = default_coll
+        st.session_state["_ask_coll_source"] = default_coll
+
+    active_pdf = st.session_state.get("active_pdf", "")
     if active_pdf:
         st.info(f"Active PDF: **{active_pdf}** → collection `{default_coll}`")
 
@@ -695,7 +699,7 @@ with tab_ask:
         value="What are the eligibility requirements for Medicaid?",
         placeholder="Ask anything about your uploaded PDF...",
     )
-    ask_collection = st.text_input("Collection", value=default_coll, key="ask_coll")
+    ask_collection = st.text_input("Collection", key="ask_coll")
 
     # Routing preview (live, before submit)
     if query_text.strip():
