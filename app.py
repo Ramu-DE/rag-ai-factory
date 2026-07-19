@@ -723,22 +723,47 @@ with tab_ask:
     st.header("Ask a Question")
     st.caption("The router picks the optimal pipeline spec based on query intent — no manual spec selection needed.")
 
-    # Pre-fill collection from PDF/IDP upload tabs — sync session_state so widget stays in step
+    # Pre-fill collection from whichever tab last processed a document
     default_coll = st.session_state.get("active_collection", "factory_pdf_demo")
     if "ask_coll" not in st.session_state or st.session_state.get("_ask_coll_source") != default_coll:
         st.session_state["ask_coll"]         = default_coll
         st.session_state["_ask_coll_source"] = default_coll
 
     active_pdf = st.session_state.get("active_pdf", "")
-    if active_pdf:
-        st.info(f"Active PDF: **{active_pdf}** → collection `{default_coll}`")
 
-    query_text = st.text_input(
-        "Your question",
-        value="What are the eligibility requirements for Medicaid?",
-        placeholder="Ask anything about your uploaded PDF...",
-    )
-    ask_collection = st.text_input("Collection", key="ask_coll")
+    # Fetch all available collections from Qdrant for the dropdown
+    try:
+        from rag_factory.components.base import get_qdrant_client as _gqc_ask
+        _available_colls = sorted(
+            c.name for c in _gqc_ask().get_collections().collections
+        )
+    except Exception:
+        _available_colls = []
+
+    col_ask1, col_ask2 = st.columns([3, 1])
+    with col_ask1:
+        query_text = st.text_input(
+            "Your question",
+            value="",
+            placeholder="Ask anything about your uploaded documents...",
+        )
+    with col_ask2:
+        if _available_colls:
+            # Show dropdown of real collections; default to last active
+            _default_idx = _available_colls.index(default_coll) \
+                           if default_coll in _available_colls else 0
+            ask_collection = st.selectbox(
+                "Collection",
+                _available_colls,
+                index=_default_idx,
+                key="ask_coll_select",
+            )
+            st.session_state["ask_coll"] = ask_collection
+        else:
+            ask_collection = st.text_input("Collection", key="ask_coll")
+
+    if active_pdf and ask_collection:
+        st.caption(f"Active document: **{active_pdf}** → `{ask_collection}`")
 
     # Routing preview (live, before submit)
     if query_text.strip():

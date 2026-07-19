@@ -63,8 +63,12 @@ _LISTING = re.compile(
 )
 _SUMMARY = re.compile(
     r"\b(summarize|summarise|summarization|give me a summary|provide a summary|"
-    r"overview|key points|key takeaways|tl;?dr|what is this (about|document)|"
-    r"main (topic|finding|idea|point|theme))\b", re.I
+    r"overview|key points|key takeaways|tl;?dr|"
+    r"what is this (about|document)|"
+    r"main (topic|finding|idea|point|theme|conclusion)|"
+    r"key (finding|result|conclusion|outcome|insight)s?|"
+    r"what (were|are|is) the (key|main|primary|top) (finding|result|conclusion|outcome|insight|point)s?|"
+    r"findings? of (this|the) (research|study|paper|report|document))\b", re.I
 )
 _TEMPORAL = re.compile(
     r"\b(latest|recent|new|updated|changed|since|after \d{4}|before \d{4}|"
@@ -79,8 +83,10 @@ _STEP_BY_STEP = re.compile(
     r"\b(how to|step.?by.?step|explain how|walk me through|process of|procedure)\b", re.I
 )
 _AGENTIC = re.compile(
-    r"\b(research|find all|investigate|gather|collect all|comprehensive|"
-    r"thorough|deep.?dive|multi.?step|iterative|recursively)\b", re.I
+    r"\b(find all|investigate|gather all|collect all|"
+    r"thorough|deep.?dive|multi.?step|iterative|recursively|"
+    r"research all|research every|research into|research across|"
+    r"comprehensive\s+(?:analysis|review|audit|study|search))\b", re.I
 )
 
 # ─── spec map ─────────────────────────────────────────────────────────────────
