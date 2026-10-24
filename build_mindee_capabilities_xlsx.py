@@ -1085,13 +1085,13 @@ def build_quick_ref(wb):
     ws.sheet_view.showGridLines = False
     ws.tab_color = C["dgrey"]
     r = title_block(ws, "Quick Reference — Your Account Details + Key API Patterns",
-        "Account: drop2ramu@gmail.com | API Key Name: aifactory | Key: md_9bHNrv8-gFT7x0TjQaZcbh6ZrjgYICzkP4XDVzpJdrk",
+        "Account: drop2ramu@gmail.com | API Key Name: aifactory | Key: <MINDEE_API_KEY>",
         C["dgrey"])
 
     account = [
         ("Account Email",  "drop2ramu@gmail.com"),
         ("API Key Name",   "aifactory"),
-        ("API Key Value",  "md_9bHNrv8-gFT7x0TjQaZcbh6ZrjgYICzkP4XDVzpJdrk"),
+        ("API Key Value",  "<MINDEE_API_KEY>"),
         ("API Version",    "V2  (app.mindee.com — NOT legacy platform.mindee.com)"),
         ("Base URL",       "https://api.mindee.net/v2/"),
         ("Docs URL",       "https://docs.mindee.com/"),
@@ -1108,13 +1108,13 @@ def build_quick_ref(wb):
 
     snippets = [
         ("Python SDK — Invoice", C["mint"],
-         'pip install mindee\n\nfrom mindee import Client, product\n\nclient = Client(api_key="md_9bHNrv8-gFT7x0TjQaZcbh6ZrjgYICzkP4XDVzpJdrk")\n\n# Submit and wait for result (SDK polls automatically)\nresult = client.enqueue_and_parse(product.InvoiceV4, "./invoice.pdf")\n\n# Access fields\nprint(result.document.inference.result.fields["supplier_name"].value)\nprint(result.document.inference.result.fields["total_amount"].value)\nprint(result.document.inference.result.fields["date"].value)\n\n# Line items (array field)\nfor item in result.document.inference.result.fields["line_items"].items:\n    print(item.fields["description"].value, item.fields["total_price"].value)'),
+         'pip install mindee\n\nfrom mindee import Client, product\n\nclient = Client(api_key="<MINDEE_API_KEY>")\n\n# Submit and wait for result (SDK polls automatically)\nresult = client.enqueue_and_parse(product.InvoiceV4, "./invoice.pdf")\n\n# Access fields\nprint(result.document.inference.result.fields["supplier_name"].value)\nprint(result.document.inference.result.fields["total_amount"].value)\nprint(result.document.inference.result.fields["date"].value)\n\n# Line items (array field)\nfor item in result.document.inference.result.fields["line_items"].items:\n    print(item.fields["description"].value, item.fields["total_price"].value)'),
         ("Python SDK — Custom Model", C["sky"],
-         'from mindee import Client\nfrom mindee.product import CustomV1  # use CustomV1 for any custom model\n\nclient = Client(api_key="md_9bHNrv8-gFT7x0TjQaZcbh6ZrjgYICzkP4XDVzpJdrk")\n\n# Replace YOUR_MODEL_ID with the model ID from app.mindee.com\nresult = client.enqueue_and_parse(\n    CustomV1,\n    "./document.pdf",\n    endpoint_name="YOUR_MODEL_ID",\n)\n\nfor name, field in result.document.inference.result.fields.items():\n    print(f"{name}: {field.value}  (confidence: {field.confidence})")'),
+         'from mindee import Client\nfrom mindee.product import CustomV1  # use CustomV1 for any custom model\n\nclient = Client(api_key="<MINDEE_API_KEY>")\n\n# Replace YOUR_MODEL_ID with the model ID from app.mindee.com\nresult = client.enqueue_and_parse(\n    CustomV1,\n    "./document.pdf",\n    endpoint_name="YOUR_MODEL_ID",\n)\n\nfor name, field in result.document.inference.result.fields.items():\n    print(f"{name}: {field.value}  (confidence: {field.confidence})")'),
         ("Direct REST API — Enqueue + Poll", C["lav"],
-         '# Step 1 — Submit file\ncurl -X POST "https://api.mindee.net/v2/inferences/enqueue" \\\n  -H "Authorization: Token md_9bHNrv8-gFT7x0TjQaZcbh6ZrjgYICzkP4XDVzpJdrk" \\\n  -F "file=@invoice.pdf" \\\n  -F "model_id=mindee/invoices/v4"\n# Returns: {"job_id": "xxx", "status": "enqueued"}\n\n# Step 2 — Wait 3 seconds, then poll\nsleep 3\ncurl "https://api.mindee.net/v2/jobs/JOB_ID_HERE" \\\n  -H "Authorization: Token md_9bHNrv8-gFT7x0TjQaZcbh6ZrjgYICzkP4XDVzpJdrk"\n# HTTP 200 = still processing | HTTP 302 = done (use result_url)\n\n# Step 3 — Get result\ncurl "https://api.mindee.net/v2/inferences/INFERENCE_ID_HERE" \\\n  -H "Authorization: Token md_9bHNrv8-gFT7x0TjQaZcbh6ZrjgYICzkP4XDVzpJdrk"'),
+         '# Step 1 — Submit file\ncurl -X POST "https://api.mindee.net/v2/inferences/enqueue" \\\n  -H "Authorization: Token <MINDEE_API_KEY>" \\\n  -F "file=@invoice.pdf" \\\n  -F "model_id=mindee/invoices/v4"\n# Returns: {"job_id": "xxx", "status": "enqueued"}\n\n# Step 2 — Wait 3 seconds, then poll\nsleep 3\ncurl "https://api.mindee.net/v2/jobs/JOB_ID_HERE" \\\n  -H "Authorization: Token <MINDEE_API_KEY>"\n# HTTP 200 = still processing | HTTP 302 = done (use result_url)\n\n# Step 3 — Get result\ncurl "https://api.mindee.net/v2/inferences/INFERENCE_ID_HERE" \\\n  -H "Authorization: Token <MINDEE_API_KEY>"'),
         ("Make.com Setup", C["peach"],
-         'Steps:\n1. In Make.com, search "Mindee V2 verified" (NOT community apps)\n2. Select Action: "Extract Document Data"\n3. Create Connection:\n   - Name:    MindeeV2-aifactory\n   - API Key: md_9bHNrv8-gFT7x0TjQaZcbh6ZrjgYICzkP4XDVzpJdrk\n4. Click "Search Model" → type model name (e.g. "Invoice")\n5. Link a file input module (Gmail, Drive, Dropbox, etc.)\n   IMPORTANT: Do NOT fill the "File" field manually — it auto-connects\n6. Map output fields to downstream modules (Sheets, CRM, Slack, etc.)'),
+         'Steps:\n1. In Make.com, search "Mindee V2 verified" (NOT community apps)\n2. Select Action: "Extract Document Data"\n3. Create Connection:\n   - Name:    MindeeV2-aifactory\n   - API Key: <MINDEE_API_KEY>\n4. Click "Search Model" → type model name (e.g. "Invoice")\n5. Link a file input module (Gmail, Drive, Dropbox, etc.)\n   IMPORTANT: Do NOT fill the "File" field manually — it auto-connects\n6. Map output fields to downstream modules (Sheets, CRM, Slack, etc.)'),
     ]
 
     r += 1
