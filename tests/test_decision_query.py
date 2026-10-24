@@ -33,6 +33,11 @@ def test_claims_need_citations_and_grounded_numbers():
     assert "does not exist" in ghost[0]["problems"][0]
 
 
+def test_split_claims_keeps_abbreviations_and_splits_on_citations():
+    a = "Microbial limits complied with Ph. Eur. [2][7]. Water was 1.4 % [2]. Dr. H. Sato approved it [3]."
+    assert dq.split_claims(a) == ["Microbial limits complied with Ph. Eur. [2][7].", "Water was 1.4 % [2].", "Dr. H. Sato approved it [3]."]
+
+
 def test_split_claims_skips_headings():
     claims = dq.split_claims("## Result\n- Assay was 99.4 % [1].\n- Released [1].\nSummary:")
     assert claims == ["Assay was 99.4 % [1].", "Released [1]."]

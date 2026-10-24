@@ -86,14 +86,33 @@ def context_block(n: int, c: Dict[str, Any]) -> str:
     return f"[{n}] ({label})\n{body}"
 
 
+# Abbreviations whose full stop does not end a sentence (pharmacopoeia, titles, refs).
+_ABBREV = re.compile(r"\b(Ph|Eur|USP|JP|BP|Dr|Mr|Ms|Prof|No|Nr|Ref|Fig|approx|vs|e\.g|i\.e|cf|etc|Inc|Ltd|Co|St)\.", re.I)
+_PROTECT = "\u2024"  # one-dot leader stands in for a protected full stop
+
+
 def split_claims(answer: str) -> List[str]:
-    """Sentences / bullet lines. Headings and short connective lines are not claims."""
+    """Claims = segments ending in a citation group, else sentences. Headings are not claims.
+
+    The model is told to end every sentence with its citations, so a citation
+    group is the most reliable boundary; plain sentence splitting is only the
+    fallback, with abbreviations like "Ph. Eur." protected.
+    """
     parts: List[str] = []
     for line in answer.splitlines():
         line = line.strip().lstrip("-*• ").strip()
         if not line:
             continue
-        parts.extend(s.strip() for s in re.split(r"(?<=[.!?])\s+(?=[A-Z0-9\"'(])", line) if s.strip())
+        line = _ABBREV.sub(lambda m: m.group(0)[:-1] + _PROTECT, line)
+        for seg in re.split(r"(?:(?<=\][.!?])|(?<=\]))\s+(?=\S)", line):
+            seg = seg.strip()
+            if not seg:
+                continue
+            if _CITE.search(seg):
+                parts.append(seg)
+            else:
+                parts.extend(x.strip() for x in re.split(r"(?<=[.!?])\s+(?=[A-Z0-9\"'(])", seg) if x.strip())
+    parts = [p.replace(_PROTECT, ".") for p in parts]
     claims = []
     for p in parts:
         bare = _CITE.sub("", p).strip(" #*:")
