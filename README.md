@@ -100,6 +100,97 @@ python -m rag_factory.temporal.worker  # start worker
 
 ---
 
+## Qdrant configuration
+
+`QDRANT_URL` and `QDRANT_API_KEY` are required. The factory no longer falls
+back silently to an in-memory store; set `RAG_FACTORY_ALLOW_MEMORY=1` to opt
+into a throwaway in-memory Qdrant (tests / demos only — a warning is logged).
+
+Incremental ingestion keeps one hash index per document:
+`.index/<collection>__<sha256(doc_id)[:16]>_index.json` (scope is
+`<tenant_id>/<doc_id>` when a tenant is given), so documents sharing a
+collection never overwrite each other. A legacy `<collection>_index.json`
+is migrated the first time the document it describes is re-processed.
+
+---
+
+## Service mode (behind the AI Control Plane)
+
+The FastAPI app (`uvicorn rag_factory.api.main:app`) can run as a **private
+sidecar** reached only server-to-server by the AI Control Plane. It is
+enabled by setting `SERVICE_TOKEN`; with it unset the API behaves as before.
+
+| Env var | Meaning |
+|---|---|
+| `SERVICE_TOKEN` | Shared secret. Non-empty turns service mode on. |
+| `ALLOWED_ORIGINS` | Comma-separated CORS origins (default: none, i.e. no CORS). |
+| `QDRANT_URL`, `QDRANT_API_KEY` | Required (see above). |
+
+Header contract — required on every route except `GET /health`:
+
+| Header | Rule | On failure |
+|---|---|---|
+| `X-Service-Token` | equals `SERVICE_TOKEN` (constant-time compare) | 401 |
+| `X-Tenant-Id` | `^[a-z0-9][a-z0-9-]{0,62}$` | 400 |
+| `X-Persona-Id` | `^[A-Za-z0-9_-]{1,64}$` | 400 |
+
+In service mode:
+
+- The `X-Tenant-Id` tenant **overrides** any `tenant_id` in request bodies or
+  forms. `/ingest`, `/ingest/finalized` and `/idp/*` stamp it on every point;
+  `/query` and `/compare` must-filter every Qdrant search on `tenant_id`;
+  `/idp/collections/{name}/stats` only reports that tenant's data.
+- `/docs`, `/redoc` and `/openapi.json` are disabled; `spec` names must be
+  plain file names inside `specs/`.
+- Do not publish the port (e.g. through CloudFront); bind it to the private
+  network only.
+
+`/query` honours a requested spec's `retrieval.top_k`, and a
+`filtered_rag` / `multitenant_rag` strategy makes the tenant filter mandatory.
+Retrieval itself is still dense top-k: the full Assembler path (spec chunker,
+rerank, agentic modes) is Phase 2.
+
+### `POST /ingest/finalized`
+
+Consumes a `FinalizedDocument v1` (control-plane contract
+`finalized-document.v1.schema.json`). Target collection: query parameter
+`?collection_name=...` or an extra body key `collection_name`.
+
+| Check | Status |
+|---|---|
+| missing `collection_name` | 400 |
+| `schemaVersion != "finalized-document/v1"`, missing required keys, bad ids / shapes | 422 |
+| service mode and `tenantId != X-Tenant-Id` | 403 |
+| `contentSha256 != sha256(json.dumps(content, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode())` | 409 |
+| a newer `version` of the same `documentId` already ingested for the tenant | 409 |
+
+`content.pages` (or `content.text` when there are no pages) is fixed-chunked
+and embedded (Titan v2, 1024-d). Each point's payload carries `text, doc_id
+(=documentId), finalized_document_id, version, tenant_id, doc_type, gxp,
+region, page_num (when pages are given), chunk_index, source_sha256,
+content_sha256` and `fields` (name → value, values truncated to 256 chars).
+Point ids are deterministic from (tenant, finalizedDocumentId, version,
+chunk_index): re-sending the same version replaces it; a new version of the
+same `documentId` deletes the previous versions' points in that collection.
+
+Response:
+
+```json
+{"collection_name": "kb_acme", "tenant_id": "acme", "document_id": "doc-inv1",
+ "finalized_document_id": "fd-abc2", "version": 2, "content_sha256": "…",
+ "chunk_count": 8, "points_upserted": 8, "points_deleted": 10,
+ "replaced_same_version": false, "superseded_versions": [1], "elapsed_ms": 412}
+```
+
+Tests (offline: in-memory Qdrant, fake embeddings):
+
+```bash
+pip install -r requirements.txt pytest
+python -m pytest tests
+```
+
+---
+
 ## Source notebooks
 
 All 33 patterns originate from:
