@@ -37,6 +37,10 @@ class QueryResponse(BaseModel):
     guard_log       : Dict[str, Any]       = {}
     faithfulness    : Optional[float]      = None
     elapsed_ms      : int                  = 0
+    tenant_id       : Optional[str]        = None   # tenant filter applied, if any
+    spec            : Optional[str]        = None
+    retrieval_strategy : Optional[str]     = None   # from spec (informational; dense top-k runs)
+    top_k           : Optional[int]        = None   # effective top_k used
 
 
 class EvaluateRequest(BaseModel):
@@ -145,4 +149,21 @@ class IDPCollectionStats(BaseModel):
     indexed_pages   : int
     last_processed  : Optional[str]
     doc_id          : Optional[str]
+    doc_ids         : List[str]     = []
     doc_types_seen  : List[str]     = []
+
+
+# ── FinalizedDocument v1 ingestion ────────────────────────────────────────────
+class FinalizedIngestResponse(BaseModel):
+    collection_name       : str
+    tenant_id             : str
+    document_id           : str
+    finalized_document_id : str
+    version               : int
+    content_sha256        : str
+    chunk_count           : int
+    points_upserted       : int
+    points_deleted        : int
+    replaced_same_version : bool      = False
+    superseded_versions   : List[int] = []
+    elapsed_ms            : int       = 0

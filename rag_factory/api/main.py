@@ -1,14 +1,23 @@
 # -*- coding: utf-8 -*-
 """
 AI RAG Factory — FastAPI service
-Endpoints: /health  /specs  /ingest  /query  /evaluate  /compare
+Endpoints: /health  /specs  /ingest  /ingest/finalized  /query  /evaluate  /compare
            /idp/classify  /idp/process  /idp/batch  /idp/collections/{name}/stats
+
+Service mode (env SERVICE_TOKEN non-empty): the app runs as a private sidecar
+behind the AI Control Plane. Every route except GET /health requires
+X-Service-Token, X-Tenant-Id and X-Persona-Id; the header tenant overrides any
+tenant in the request and is stamped on / filtered for in Qdrant. CORS is
+limited to ALLOWED_ORIGINS and the interactive docs are disabled.
 """
 from __future__ import annotations
-import os, time
+import hashlib, hmac, json, logging, os, re, time
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Query
+from fastapi import (
+    Body, Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
@@ -23,28 +32,113 @@ from .schemas import (
     IDPClassifyRequest, IDPClassifyResponse,
     IDPProcessRequest, IDPBatchResponse, IDPFileResult,
     IDPCollectionStats,
+    FinalizedIngestResponse,
 )
 from ..spec       import PipelineSpec, MANIFEST, VALIDATOR
 from ..assembler  import Assembler
 from ..temporal   import TEMPORAL_AVAILABLE
 
+_log = logging.getLogger("rag_factory.api")
+
+# ---------------------------------------------------------------------------
+# Service mode: shared-token auth + asserted tenant / persona
+# ---------------------------------------------------------------------------
+TENANT_RE  = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
+PERSONA_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def _service_token() -> str:
+    return os.getenv("SERVICE_TOKEN", "").strip()
+
+
+SERVICE_MODE = bool(_service_token())   # fixed at startup: CORS + docs
+
+
+@dataclass(frozen=True)
+class ServiceContext:
+    service_mode: bool
+    tenant_id:    Optional[str] = None
+    persona_id:   Optional[str] = None
+
+
+def service_context(
+    request:         Request,
+    x_service_token: Optional[str] = Header(None),
+    x_tenant_id:     Optional[str] = Header(None),
+    x_persona_id:    Optional[str] = Header(None),
+) -> ServiceContext:
+    """
+    App-wide dependency. With SERVICE_TOKEN unset it is a no-op (legacy
+    behaviour). With it set, every route except GET /health requires a valid
+    X-Service-Token (401) and well-formed X-Tenant-Id / X-Persona-Id (400).
+    """
+    token = _service_token()
+    if not token:
+        return ServiceContext(service_mode=False)
+    if request.method == "GET" and request.scope.get("endpoint") is health:
+        return ServiceContext(service_mode=True)
+    if not x_service_token or not hmac.compare_digest(
+        x_service_token.encode("utf-8"), token.encode("utf-8")
+    ):
+        raise HTTPException(status_code=401, detail="Missing or invalid X-Service-Token")
+    if not x_tenant_id or not TENANT_RE.fullmatch(x_tenant_id):
+        raise HTTPException(status_code=400,
+                            detail="Missing or invalid X-Tenant-Id (^[a-z0-9][a-z0-9-]{0,62}$)")
+    if not x_persona_id or not PERSONA_RE.fullmatch(x_persona_id):
+        raise HTTPException(status_code=400,
+                            detail="Missing or invalid X-Persona-Id (^[A-Za-z0-9_-]{1,64}$)")
+    _log.info("service request %s %s tenant=%s persona=%s",
+              request.method, request.url.path, x_tenant_id, x_persona_id)
+    return ServiceContext(service_mode=True, tenant_id=x_tenant_id, persona_id=x_persona_id)
+
+
+def _effective_tenant(ctx: ServiceContext, requested: Optional[str]) -> Optional[str]:
+    """In service mode the asserted header tenant always wins."""
+    return ctx.tenant_id if ctx.service_mode else requested
+
+
+def _tenant_filter(tenant_id: Optional[str]):
+    if not tenant_id:
+        return None
+    from qdrant_client.models import Filter, FieldCondition, MatchValue
+    return Filter(must=[FieldCondition(key="tenant_id", match=MatchValue(value=tenant_id))])
+
+
 app = FastAPI(
     title="AI RAG Factory",
     description="NVIDIA-inspired, Temporal-ready RAG pipeline engine over 33 patterns",
     version="0.2.0",
+    dependencies=[Depends(service_context)],
+    # The docs/openapi routes bypass dependencies, so hide them in service mode.
+    docs_url=None if SERVICE_MODE else "/docs",
+    redoc_url=None if SERVICE_MODE else "/redoc",
+    openapi_url=None if SERVICE_MODE else "/openapi.json",
 )
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
-)
+if SERVICE_MODE:
+    _origins = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()]
+    if _origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=_origins, allow_methods=["GET", "POST"],
+            allow_headers=["Content-Type", "X-Service-Token", "X-Tenant-Id", "X-Persona-Id"],
+        )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
+    )
 
 _assembler = Assembler()
 SPECS_DIR  = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "specs")
 
 
 def _load_spec(spec_name: str) -> PipelineSpec:
-    """Load a spec by filename (e.g. 'simple.yaml') or full path."""
-    if os.path.isfile(spec_name):
+    """Load a spec by filename (e.g. 'simple.yaml') or full path.
+    In service mode only bare filenames inside specs/ are accepted."""
+    if SERVICE_MODE or _service_token():
+        if os.path.basename(spec_name) != spec_name or spec_name in ("", ".", ".."):
+            raise HTTPException(status_code=400, detail="spec must be a file name in specs/")
+    elif os.path.isfile(spec_name):
         return PipelineSpec.from_yaml(spec_name)
     candidate = os.path.join(SPECS_DIR, spec_name)
     if os.path.isfile(candidate):
@@ -96,13 +190,14 @@ def list_specs():
 # POST /ingest
 # ---------------------------------------------------------------------------
 @app.post("/ingest", response_model=IngestResponse, tags=["pipeline"])
-def ingest(req: IngestRequest):
+def ingest(req: IngestRequest, ctx: ServiceContext = Depends(service_context)):
     from ..components.base import get_qdrant_client, embed, chunk_id
     from qdrant_client.models import VectorParams, Distance, PointStruct
 
     t0     = time.time()
     qdrant = get_qdrant_client()
     cname  = req.collection_name
+    tenant = _effective_tenant(ctx, req.tenant_id)
 
     # Select chunker
     chunker_map = {
@@ -128,10 +223,11 @@ def ingest(req: IngestRequest):
         import hashlib, uuid as _uuid
         text     = ch.get("text","")
         pg_hash  = hashlib.sha256(text.encode()).hexdigest()
-        cid      = chunk_id(f"{cname}:{req.doc_id}:{text[:80]}")
+        scope    = f"{tenant}/{req.doc_id}" if tenant else req.doc_id
+        cid      = chunk_id(f"{cname}:{scope}:{text[:80]}")
         payload  = {**ch, "doc_id": req.doc_id, "page_hash": pg_hash}
-        if req.tenant_id:
-            payload["tenant_id"] = req.tenant_id
+        if tenant:
+            payload["tenant_id"] = tenant
         vec = embed(text)
         points.append(PointStruct(id=cid, vector=vec, payload=payload))
         pages_changed += 1
@@ -171,38 +267,169 @@ def _chunker_window(text: str, window: int = 3):
 
 
 # ---------------------------------------------------------------------------
+# POST /ingest/finalized  — FinalizedDocument v1 from the AI Control Plane
+# ---------------------------------------------------------------------------
+_COLLECTION_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+
+
+@app.post("/ingest/finalized", response_model=FinalizedIngestResponse, tags=["pipeline"])
+def ingest_finalized(
+    body            : Dict[str, Any] = Body(..., description="FinalizedDocument v1 JSON; "
+                                            "may carry an extra `collection_name` key"),
+    collection_name : Optional[str]  = Query(None, description="Target Qdrant collection "
+                                             "(overrides body.collection_name)"),
+    svc             : ServiceContext = Depends(service_context),
+):
+    """
+    Ingest a finalized (reviewed, four-eyes approved) document.
+
+    Checks: structure / schemaVersion (422), tenant — in service mode
+    body.tenantId must equal X-Tenant-Id (403), contentSha256 over the
+    canonical JSON of `content` (409), and that no newer version of the same
+    documentId is already in the collection for this tenant (409).
+
+    Then content.pages (or content.text when no pages) is fixed-chunked,
+    embedded and upserted. Point ids are deterministic from
+    (tenant, finalizedDocumentId, version, chunk_index): re-ingesting the same
+    version replaces it; a new version of the same documentId removes the
+    previous versions' points in this collection.
+    """
+    from ..components.base import embed, get_qdrant_client
+    from ..pdf_processor import _ensure_collection, _delete_chunks_by_ids
+    from ..finalized_ingest import (
+        FinalizedDocumentError, validate_finalized_document, content_sha256, build_payloads,
+    )
+    from qdrant_client.models import Filter, FieldCondition, MatchValue, PointStruct
+
+    t0  = time.time()
+    doc = dict(body)
+    body_collection = doc.pop("collection_name", None)   # not part of the contract
+    cname = collection_name or body_collection
+    if not isinstance(cname, str) or not _COLLECTION_RE.fullmatch(cname):
+        raise HTTPException(status_code=400,
+                            detail="collection_name (query or body) is required: ^[A-Za-z0-9_-]{1,128}$")
+
+    try:
+        validate_finalized_document(doc)
+    except FinalizedDocumentError as exc:
+        raise HTTPException(status_code=422, detail={"errors": exc.errors})
+
+    if svc.service_mode and doc["tenantId"] != svc.tenant_id:
+        raise HTTPException(status_code=403, detail="tenantId does not match X-Tenant-Id")
+    tenant = svc.tenant_id if svc.service_mode else doc["tenantId"]
+
+    if content_sha256(doc["content"]) != doc["contentSha256"]:
+        raise HTTPException(status_code=409,
+                            detail="contentSha256 does not match the canonical JSON of content")
+
+    version = doc["version"]
+    qdrant  = get_qdrant_client()
+    _ensure_collection(qdrant, cname)
+
+    # Existing points of this document for this tenant (all versions).
+    doc_filter = Filter(must=[
+        FieldCondition(key="tenant_id", match=MatchValue(value=tenant)),
+        FieldCondition(key="doc_id",    match=MatchValue(value=doc["documentId"])),
+    ])
+    existing: Dict[str, int] = {}
+    offset = None
+    while True:
+        batch, offset = qdrant.scroll(
+            collection_name=cname, scroll_filter=doc_filter, limit=256, offset=offset,
+            with_payload=["version"], with_vectors=False,
+        )
+        for pt in batch:
+            existing[str(pt.id)] = int((pt.payload or {}).get("version") or 0)
+        if offset is None:
+            break
+    newer = sorted({v for v in existing.values() if v > version})
+    if newer:
+        raise HTTPException(status_code=409,
+                            detail=f"A newer version ({newer[-1]}) of {doc['documentId']} is already ingested")
+
+    items  = build_payloads(doc, tenant, _chunker_fixed)
+    points = [PointStruct(id=pid, vector=embed(payload["text"]), payload=payload)
+              for pid, payload in items]
+    if points:
+        qdrant.upsert(collection_name=cname, points=points)
+
+    new_ids = {pid for pid, _ in items}
+    stale   = [pid for pid in existing if pid not in new_ids]
+    deleted = _delete_chunks_by_ids(qdrant, cname, stale)
+
+    _log.info("finalized ingest tenant=%s persona=%s doc=%s fd=%s v%s -> %s: +%d -%d",
+              tenant, svc.persona_id, doc["documentId"], doc["finalizedDocumentId"],
+              version, cname, len(points), deleted)
+
+    return FinalizedIngestResponse(
+        collection_name       = cname,
+        tenant_id             = tenant,
+        document_id           = doc["documentId"],
+        finalized_document_id = doc["finalizedDocumentId"],
+        version               = version,
+        content_sha256        = doc["contentSha256"],
+        chunk_count           = len(items),
+        points_upserted       = len(points),
+        points_deleted        = deleted,
+        replaced_same_version = any(v == version for v in existing.values()),
+        superseded_versions   = sorted({v for v in existing.values() if v < version}),
+        elapsed_ms            = int((time.time() - t0) * 1000),
+    )
+
+
+# ---------------------------------------------------------------------------
 # POST /query
 # ---------------------------------------------------------------------------
 @app.post("/query", response_model=QueryResponse, tags=["pipeline"])
-def query(req: QueryRequest):
+def query(req: QueryRequest, svc: ServiceContext = Depends(service_context)):
+    """
+    Dense retrieval + guarded generation.
+
+    If `spec` is given, the spec's `retrieval.top_k` replaces `top_k`, and a
+    `filtered_rag` / `multitenant_rag` retrieval strategy makes the tenant
+    filter mandatory (400 without a tenant). In service mode the X-Tenant-Id
+    header is always the tenant and every search is must-filtered on it.
+
+    Limitation (Phase 0): only top_k and the tenant filter are honoured from
+    the spec. Retrieval is always dense top-k; the spec's chunker, reranker,
+    compression and agentic/generation settings are NOT executed here — the
+    full Assembler path is Phase 2.
+    """
     from ..components.base import embed, dense_search, llm_call, get_qdrant_client
     from ..guards import RetrievalGuard, GenerationGuard, AmbiguityGuard, SystemGuard
 
     t0 = time.time()
+    tenant   = _effective_tenant(svc, req.tenant_id)
+    top_k    = req.top_k
+    strategy = None
+    if req.spec:
+        spec     = _load_spec(req.spec)
+        top_k    = spec.retrieval.top_k
+        strategy = spec.retrieval.strategy
+        if strategy in _TENANT_STRATEGIES and not tenant:
+            raise HTTPException(status_code=400,
+                                detail=f"Spec strategy '{strategy}' requires a tenant_id")
 
     # Ambiguity guard first
     ctx: Dict[str, Any] = {
         "query": req.query, "retrieved_chunks": [],
-        "tenant_id": req.tenant_id or "default",
+        "tenant_id": tenant or "default",
     }
     a_result = AmbiguityGuard().run(ctx)
     effective_query = a_result.get("query", req.query)
     guard_log: Dict[str, Any] = {"ambiguity": a_result.get("guard_log",{}).get("ambiguity",[])}
 
     # Retrieval
-    from qdrant_client.models import Filter, FieldCondition, MatchValue
     qdrant    = get_qdrant_client()
     vec       = embed(effective_query)
-    qfilter   = None
-    if req.tenant_id:
-        qfilter = Filter(must=[FieldCondition(key="tenant_id", match=MatchValue(value=req.tenant_id))])
-    points    = dense_search(qdrant, req.collection_name, vec, req.top_k, filters=qfilter)
+    qfilter   = _tenant_filter(tenant)
+    points    = dense_search(qdrant, req.collection_name, vec, top_k, filters=qfilter)
     chunks    = [p.payload for p in points]
     scores    = [p.score   for p in points]
 
     # Retrieval guard
     r_ctx    = {"query": effective_query, "retrieved_chunks": chunks,
-                "collection_name": req.collection_name, "tenant_id": req.tenant_id or "default"}
+                "collection_name": req.collection_name, "tenant_id": tenant or "default"}
     r_result = RetrievalGuard().run(r_ctx)
     guard_log["retrieval"] = r_result.get("guard_log",{}).get("retrieval",[])
 
@@ -221,7 +448,7 @@ def query(req: QueryRequest):
     # Generation guard
     g_result = GenerationGuard().run({
         "query": req.query, "answer": answer, "retrieved_chunks": chunks,
-        "tenant_id": req.tenant_id or "default",
+        "tenant_id": tenant or "default",
     })
     guard_log["generation"] = g_result.get("guard_log",{}).get("generation",[])
     faithfulness = g_result.get("faithfulness_score")
@@ -235,7 +462,14 @@ def query(req: QueryRequest):
         guard_log=guard_log,
         faithfulness=faithfulness,
         elapsed_ms=elapsed,
+        tenant_id=tenant,
+        spec=req.spec,
+        retrieval_strategy=strategy,
+        top_k=top_k,
     )
+
+
+_TENANT_STRATEGIES = {"filtered_rag", "multitenant_rag"}
 
 
 # ---------------------------------------------------------------------------
@@ -257,9 +491,11 @@ def evaluate(req: EvaluateRequest):
 # POST /compare
 # ---------------------------------------------------------------------------
 @app.post("/compare", response_model=CompareResponse, tags=["pipeline"])
-def compare(req: CompareRequest):
+def compare(req: CompareRequest, svc: ServiceContext = Depends(service_context)):
     from ..components.base import embed, dense_search, llm_call, get_qdrant_client
     from ..guards import GenerationGuard
+
+    tenant = _effective_tenant(svc, None)
 
     def _run_spec(spec_name: str):
         spec   = _load_spec(spec_name)
@@ -267,7 +503,11 @@ def compare(req: CompareRequest):
         qdrant = get_qdrant_client()
         vec    = embed(req.query)
         k      = spec.retrieval.top_k
-        points = dense_search(qdrant, req.collection_name, vec, k)
+        if spec.retrieval.strategy in _TENANT_STRATEGIES and not tenant:
+            raise HTTPException(status_code=400,
+                                detail=f"Spec strategy '{spec.retrieval.strategy}' requires a tenant")
+        points = dense_search(qdrant, req.collection_name, vec, k,
+                              filters=_tenant_filter(tenant))
         chunks = [p.payload for p in points]
         ctx    = "\n\n".join(c.get("text","") for c in chunks)
         answer = llm_call(
@@ -275,7 +515,7 @@ def compare(req: CompareRequest):
         )
         faith_result = GenerationGuard().run({
             "query": req.query, "answer": answer,
-            "retrieved_chunks": chunks, "tenant_id": "default",
+            "retrieved_chunks": chunks, "tenant_id": tenant or "default",
         })
         elapsed = int((time.time() - t0) * 1000)
         return answer, faith_result.get("faithfulness_score"), elapsed
@@ -324,6 +564,7 @@ async def idp_process(
     chunk_size        : int            = Form(400),
     force_reindex     : bool           = Form(False),
     tenant_id         : Optional[str]  = Form(None),
+    svc               : ServiceContext = Depends(service_context),
 ):
     """
     Upload a single PDF/image and run the full IDP pipeline:
@@ -333,6 +574,7 @@ async def idp_process(
     from fastapi import UploadFile
     from ..idp_pipeline import IDPPipeline
 
+    tenant_id = _effective_tenant(svc, tenant_id)
     contents = await file.read()
     suffix   = os.path.splitext(file.filename or "doc.pdf")[1] or ".pdf"
 
@@ -354,6 +596,7 @@ async def idp_process(
             file_path         = tmp_path,
             doc_type_override = doc_type_override,
             extraction_mode   = extraction_mode,
+            original_name     = file.filename or None,
         )
     finally:
         os.unlink(tmp_path)
@@ -393,6 +636,7 @@ async def idp_batch(
     chunk_size      : int              = Form(400),
     force_reindex   : bool             = Form(False),
     tenant_id       : Optional[str]    = Form(None),
+    svc             : ServiceContext   = Depends(service_context),
 ):
     """
     Process multiple uploaded files in sequence.
@@ -405,6 +649,7 @@ async def idp_batch(
     from ..idp_pipeline import IDPPipeline
 
     t0      = time.time()
+    tenant_id = _effective_tenant(svc, tenant_id)
     INDEX_DIR = os.path.join(
         os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".index"
     )
@@ -432,6 +677,7 @@ async def idp_batch(
             result = pipeline.process(
                 file_path       = tmp_path,
                 extraction_mode = extraction_mode,
+                original_name   = upload.filename or None,
             )
             ir = result.ingest_report
             file_results.append(IDPFileResult(
@@ -487,11 +733,14 @@ async def idp_batch(
 # ---------------------------------------------------------------------------
 @app.get("/idp/collections/{collection_name}/stats",
          response_model=IDPCollectionStats, tags=["idp"])
-def idp_collection_stats(collection_name: str):
+def idp_collection_stats(collection_name: str,
+                         svc: ServiceContext = Depends(service_context)):
     """
     Return incremental index stats for a collection:
     total chunks in Qdrant, indexed pages, last processed time.
+    In service mode everything is restricted to the X-Tenant-Id tenant.
     """
+    tenant = _effective_tenant(svc, None)
     from ..pdf_processor import IncrementalPDFProcessor
     from ..components.base import get_qdrant_client
 
@@ -499,17 +748,21 @@ def idp_collection_stats(collection_name: str):
         os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".index"
     )
     proc  = IncrementalPDFProcessor(index_dir=INDEX_DIR)
-    stats = proc.get_index_stats(collection_name)
+    stats = proc.get_index_stats(collection_name, tenant_id=tenant)
 
     # Count total Qdrant points
     total_chunks = 0
     doc_types: List[str] = []
     try:
         qdrant = get_qdrant_client()
-        cinfo  = qdrant.get_collection(collection_name)
-        total_chunks = cinfo.points_count or 0
+        tfilter = _tenant_filter(tenant)
+        if tfilter is not None:
+            total_chunks = qdrant.count(collection_name, count_filter=tfilter, exact=True).count
+        else:
+            total_chunks = qdrant.get_collection(collection_name).points_count or 0
         # Sample payloads to find doc_types seen
-        sample = qdrant.scroll(collection_name=collection_name, limit=100, with_payload=True)
+        sample = qdrant.scroll(collection_name=collection_name, limit=100,
+                               with_payload=True, scroll_filter=tfilter)
         seen: set = set()
         for pt in (sample[0] if sample else []):
             dt = pt.payload.get("doc_type") or pt.payload.get("doc_id","")
@@ -525,6 +778,7 @@ def idp_collection_stats(collection_name: str):
         indexed_pages   = stats.get("indexed_pages", 0),
         last_processed  = stats.get("last_processed"),
         doc_id          = stats.get("doc_id"),
+        doc_ids         = stats.get("doc_ids", []),
         doc_types_seen  = doc_types,
     )
 
