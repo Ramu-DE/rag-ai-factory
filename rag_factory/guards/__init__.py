@@ -104,14 +104,11 @@ class AmbiguityGuard(BaseComponent):
         rewrite: bool      = False
         new_query          = query
 
-        # FM-A1: Negation rewrite
+        # FM-A1: Negation is DETECTED, never rewritten. An LLM rewrite of
+        # "which lots did not pass" can silently invert the question, and the
+        # answer then looks authoritative. The query is passed on verbatim.
         if self._NEGATION_PATTERNS.search(query):
-            log.append(f"FM-A1: Negation detected in query — rewriting")
-            new_query = llm_call(
-                f"Rewrite this query to avoid negation while preserving intent:\n{query}",
-                max_tokens=60,
-            ).strip()
-            rewrite = True
+            log.append("FM-A1: Negation detected in query — kept verbatim (no rewrite)")
 
         # FM-A5: Global scope — warn that standard RAG will miss corpus-level answers
         if self._GLOBAL_PATTERNS.search(query):

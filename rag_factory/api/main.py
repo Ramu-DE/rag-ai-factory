@@ -33,6 +33,7 @@ from .schemas import (
     IDPProcessRequest, IDPBatchResponse, IDPFileResult,
     IDPCollectionStats,
     FinalizedIngestResponse,
+    DecisionQueryRequest,
 )
 from ..spec       import PipelineSpec, MANIFEST, VALIDATOR
 from ..assembler  import Assembler
@@ -515,6 +516,36 @@ def query(req: QueryRequest, svc: ServiceContext = Depends(service_context)):
 
 
 _TENANT_STRATEGIES = {"filtered_rag", "multitenant_rag"}
+
+
+# ---------------------------------------------------------------------------
+# POST /query/decision — decision-grade answers (see rag_factory/decision_query.py)
+# ---------------------------------------------------------------------------
+@app.post("/query/decision", tags=["pipeline"])
+def query_decision(req: DecisionQueryRequest, svc: ServiceContext = Depends(service_context)):
+    """
+    Answer from the corpus's current finalized versions only, with hybrid
+    (dense + exact identifier) retrieval, mandatory citations, claim-level
+    verification and abstention. Never rewrites the question.
+    """
+    from ..components import base
+    from .. import decision_query as dq
+
+    if not _COLLECTION_RE.fullmatch(req.collection_name):
+        raise HTTPException(status_code=400, detail="invalid collection_name")
+    tenant = _effective_tenant(svc, None)
+    for key in (req.filters or {}):
+        if key not in _QUERY_FILTER_KEYS:
+            raise HTTPException(status_code=400, detail=f"filter key '{key}' is not allowed")
+    out = dq.answer_question(
+        qdrant=base.get_qdrant_client(), collection=req.collection_name, question=req.query,
+        tenant=tenant, allowed_finalized_ids=req.allowed_finalized_ids, filters=req.filters,
+        top_k=req.top_k, min_score=req.min_score, embed=base.embed, llm_call=base.llm_call,
+        verify_with_judge=req.verify,
+    )
+    _log.info("decision query tenant=%s persona=%s coll=%s abstained=%s claims=%d",
+              tenant, svc.persona_id, req.collection_name, out.get("abstained"), len(out.get("claims", [])))
+    return out
 
 # Payload keys a caller may filter on. tenant_id is NOT here: it comes only
 # from the tenant (header in service mode), never from a caller filter.

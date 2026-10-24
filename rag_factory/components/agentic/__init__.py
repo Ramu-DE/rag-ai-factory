@@ -39,15 +39,13 @@ class CorrectiveRAG(BaseComponent):
             log.append({"text_preview": ch.get("text","")[:60], "score": score})
 
         if not good:
-            # All chunks failed — fallback: use raw query decomposition
-            fallback = llm_call(
-                f"Answer the following question using your knowledge only "
-                f"(no retrieved context was relevant):\n\n{query}",
-                max_tokens=512,
-            )
+            # No retrieved chunk is relevant: ABSTAIN. Answering "from the
+            # model's own knowledge" here produced fluent, uncited, unverifiable
+            # answers indistinguishable from grounded ones.
             return {
-                "answer": fallback,
-                "correction_log": log + [{"fallback": True}],
+                "answer": "NOT_FOUND",
+                "abstained": True,
+                "correction_log": log + [{"abstained": "no relevant context"}],
             }
 
         context = "\n\n".join(c.get("text","") for _, c in good)

@@ -170,3 +170,15 @@ class FinalizedIngestResponse(BaseModel):
     replaced_same_version : bool      = False
     superseded_versions   : List[int] = []
     elapsed_ms            : int       = 0
+
+
+class DecisionQueryRequest(BaseModel):
+    """Decision-grade question over a corpus of finalized documents."""
+    query                 : str = Field(..., min_length=3, max_length=2000)
+    collection_name       : str
+    top_k                 : int = Field(8, ge=1, le=20)
+    filters               : Optional[Dict[str, Any]] = None
+    # The corpus's CURRENT finalized versions; retrieval is restricted to them.
+    allowed_finalized_ids : Optional[List[str]] = Field(None, max_length=2000)
+    min_score             : float = Field(0.2, ge=0.0, le=1.0)
+    verify                : bool = True
