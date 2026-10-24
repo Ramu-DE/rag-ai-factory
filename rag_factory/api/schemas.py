@@ -28,6 +28,8 @@ class QueryRequest(BaseModel):
     top_k           : int           = Field(5, ge=1, le=50)
     tenant_id       : Optional[str] = None
     ground_truth    : Optional[str] = None   # for evaluation
+    # Equality filters on chunk payload (doc_type, chunk_kind, ...); tenant is separate.
+    filters         : Optional[Dict[str, Any]] = None
 
 
 class QueryResponse(BaseModel):
@@ -162,6 +164,7 @@ class FinalizedIngestResponse(BaseModel):
     version               : int
     content_sha256        : str
     chunk_count           : int
+    chunker               : str = "fixed_chunking"
     points_upserted       : int
     points_deleted        : int
     replaced_same_version : bool      = False

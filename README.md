@@ -173,6 +173,26 @@ Point ids are deterministic from (tenant, finalizedDocumentId, version,
 chunk_index): re-sending the same version replaces it; a new version of the
 same `documentId` deletes the previous versions' points in that collection.
 
+**Chunker per corpus.** `?chunker=` (or a body key `chunker`, not part of the
+hash) selects how the document is chunked; the AI Control Plane chooses it once
+per corpus from the corpus profile:
+
+| `chunker` | Text chunks | Extra chunks | Query-time effect |
+|---|---|---|---|
+| `fixed_chunking` (default) | 500 chars, 50 overlap | — | — |
+| `semantic_chunking` | one per sentence (> 20 chars) | — | — |
+| `sentence_window_chunking` | one per sentence, with `window_text` (±3 sentences) | — | `/query` answers from `window_text` |
+| `structured_chunking` | 500/50 | one per 40 reviewed fields, one per 20 table rows (header repeated) | filter with `chunk_kind` |
+
+Every payload carries `chunk_kind` (`text`, `fields`, `table`) and `chunker`.
+Re-ingesting the same version with another chunker replaces its points.
+Keyword payload indexes are created on `tenant_id, doc_id,
+finalized_document_id, doc_type, chunk_kind`.
+
+`POST /query` also accepts `filters` (equality on `doc_type, doc_id,
+finalized_document_id, chunk_kind, page_num, region, gxp`). `tenant_id` is not
+accepted as a filter; the tenant always comes from the header.
+
 Response:
 
 ```json

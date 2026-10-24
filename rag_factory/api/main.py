@@ -266,6 +266,37 @@ def _chunker_window(text: str, window: int = 3):
     return chunks
 
 
+_FILTER_INDEX_FIELDS = ("tenant_id", "doc_id", "finalized_document_id", "doc_type", "chunk_kind")
+_INDEXED: set = set()
+
+
+def _ensure_filter_indexes(qdrant, cname: str) -> None:
+    """Keyword payload indexes for the fields every finalized query filters on.
+
+    Qdrant Cloud clusters in strict mode refuse filters on unindexed fields,
+    and on large collections unindexed filters are slow. Idempotent.
+    """
+    if cname in _INDEXED:
+        return
+    from qdrant_client.models import PayloadSchemaType
+    for field in _FILTER_INDEX_FIELDS:
+        try:
+            qdrant.create_payload_index(cname, field_name=field, field_schema=PayloadSchemaType.KEYWORD)
+        except Exception as exc:   # already exists, or the in-memory client
+            _log.debug("payload index %s.%s: %s", cname, field, exc)
+    _INDEXED.add(cname)
+
+
+# Chunkers a finalized document can be ingested with: name -> (text chunker,
+# also emit field/table chunks). The control plane picks one per corpus.
+_FINALIZED_CHUNKERS = {
+    "fixed_chunking":           (_chunker_fixed,    False),
+    "semantic_chunking":        (_chunker_semantic, False),
+    "sentence_window_chunking": (_chunker_window,   False),
+    "structured_chunking":      (_chunker_fixed,    True),
+}
+
+
 # ---------------------------------------------------------------------------
 # POST /ingest/finalized  — FinalizedDocument v1 from the AI Control Plane
 # ---------------------------------------------------------------------------
@@ -278,6 +309,10 @@ def ingest_finalized(
                                             "may carry an extra `collection_name` key"),
     collection_name : Optional[str]  = Query(None, description="Target Qdrant collection "
                                              "(overrides body.collection_name)"),
+    chunker         : Optional[str]  = Query(None, description="One of "
+                                             + ", ".join(sorted(["fixed_chunking", "semantic_chunking",
+                                                                 "sentence_window_chunking", "structured_chunking"]))
+                                             + " (default fixed_chunking; overrides body.chunker)"),
     svc             : ServiceContext = Depends(service_context),
 ):
     """
@@ -304,7 +339,12 @@ def ingest_finalized(
     t0  = time.time()
     doc = dict(body)
     body_collection = doc.pop("collection_name", None)   # not part of the contract
+    body_chunker    = doc.pop("chunker", None)            # not part of the contract
     cname = collection_name or body_collection
+    chunker_name = chunker or body_chunker or "fixed_chunking"
+    if chunker_name not in _FINALIZED_CHUNKERS:
+        raise HTTPException(status_code=400,
+                            detail=f"chunker must be one of {sorted(_FINALIZED_CHUNKERS)}")
     if not isinstance(cname, str) or not _COLLECTION_RE.fullmatch(cname):
         raise HTTPException(status_code=400,
                             detail="collection_name (query or body) is required: ^[A-Za-z0-9_-]{1,128}$")
@@ -325,6 +365,7 @@ def ingest_finalized(
     version = doc["version"]
     qdrant  = get_qdrant_client()
     _ensure_collection(qdrant, cname)
+    _ensure_filter_indexes(qdrant, cname)
 
     # Existing points of this document for this tenant (all versions).
     doc_filter = Filter(must=[
@@ -347,7 +388,8 @@ def ingest_finalized(
         raise HTTPException(status_code=409,
                             detail=f"A newer version ({newer[-1]}) of {doc['documentId']} is already ingested")
 
-    items  = build_payloads(doc, tenant, _chunker_fixed)
+    chunk_fn, structured = _FINALIZED_CHUNKERS[chunker_name]
+    items  = build_payloads(doc, tenant, chunk_fn, structured=structured, chunker_name=chunker_name)
     points = [PointStruct(id=pid, vector=embed(payload["text"]), payload=payload)
               for pid, payload in items]
     if points:
@@ -357,9 +399,9 @@ def ingest_finalized(
     stale   = [pid for pid in existing if pid not in new_ids]
     deleted = _delete_chunks_by_ids(qdrant, cname, stale)
 
-    _log.info("finalized ingest tenant=%s persona=%s doc=%s fd=%s v%s -> %s: +%d -%d",
+    _log.info("finalized ingest tenant=%s persona=%s doc=%s fd=%s v%s -> %s (%s): +%d -%d",
               tenant, svc.persona_id, doc["documentId"], doc["finalizedDocumentId"],
-              version, cname, len(points), deleted)
+              version, cname, chunker_name, len(points), deleted)
 
     return FinalizedIngestResponse(
         collection_name       = cname,
@@ -369,6 +411,7 @@ def ingest_finalized(
         version               = version,
         content_sha256        = doc["contentSha256"],
         chunk_count           = len(items),
+        chunker               = chunker_name,
         points_upserted       = len(points),
         points_deleted        = deleted,
         replaced_same_version = any(v == version for v in existing.values()),
@@ -422,7 +465,7 @@ def query(req: QueryRequest, svc: ServiceContext = Depends(service_context)):
     # Retrieval
     qdrant    = get_qdrant_client()
     vec       = embed(effective_query)
-    qfilter   = _tenant_filter(tenant)
+    qfilter   = _query_filter(tenant, req.filters)
     points    = dense_search(qdrant, req.collection_name, vec, top_k, filters=qfilter)
     chunks    = [p.payload for p in points]
     scores    = [p.score   for p in points]
@@ -439,7 +482,9 @@ def query(req: QueryRequest, svc: ServiceContext = Depends(service_context)):
     guard_log["system"] = s_result.get("guard_log",{}).get("system",[])
 
     # Generation
-    context = "\n\n".join(c.get("text","") for c in chunks)
+    # Sentence-window chunks are matched on one sentence but answered from
+    # the surrounding window, which is the point of that pattern.
+    context = "\n\n".join((c.get("window_text") or c.get("text","")) for c in chunks)
     answer  = llm_call(
         f"Answer using only the provided context.\n\nContext:\n{context}\n\nQuestion: {req.query}",
         max_tokens=1024,
@@ -470,6 +515,25 @@ def query(req: QueryRequest, svc: ServiceContext = Depends(service_context)):
 
 
 _TENANT_STRATEGIES = {"filtered_rag", "multitenant_rag"}
+
+# Payload keys a caller may filter on. tenant_id is NOT here: it comes only
+# from the tenant (header in service mode), never from a caller filter.
+_QUERY_FILTER_KEYS = {"doc_type", "doc_id", "finalized_document_id", "chunk_kind", "page_num", "region", "gxp"}
+
+
+def _query_filter(tenant_id: Optional[str], filters: Optional[Dict[str, Any]]):
+    from qdrant_client.models import Filter, FieldCondition, MatchValue
+    must = []
+    if tenant_id:
+        must.append(FieldCondition(key="tenant_id", match=MatchValue(value=tenant_id)))
+    for key, value in (filters or {}).items():
+        if key not in _QUERY_FILTER_KEYS:
+            raise HTTPException(status_code=400,
+                                detail=f"filter key '{key}' is not allowed; use one of {sorted(_QUERY_FILTER_KEYS)}")
+        if not isinstance(value, (str, int, bool)):
+            raise HTTPException(status_code=400, detail=f"filter '{key}' must be a string, integer or boolean")
+        must.append(FieldCondition(key=key, match=MatchValue(value=value)))
+    return Filter(must=must) if must else None
 
 
 # ---------------------------------------------------------------------------

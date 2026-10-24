@@ -120,32 +120,83 @@ def point_id(tenant_id: str, finalized_document_id: str, version: int, chunk_ind
     return str(uuid.UUID(hashlib.sha256(key.encode("utf-8")).hexdigest()[:32]))
 
 
-def chunk_document(content: Dict[str, Any], chunker) -> List[Tuple[Optional[int], str]]:
-    """[(page_num or None, chunk_text)] — per page when pages are given."""
-    out: List[Tuple[Optional[int], str]] = []
+def chunk_document(content: Dict[str, Any], chunker) -> List[Tuple[Optional[int], Dict[str, Any]]]:
+    """[(page_num or None, chunk)] — per page when pages are given.
+
+    A chunk is the chunker's dict: at least {"text"}; sentence-window chunkers
+    also carry "window_text", the surrounding sentences used at answer time.
+    """
+    out: List[Tuple[Optional[int], Dict[str, Any]]] = []
     pages = content.get("pages") or []
     if pages:
         for p in pages:
             for ch in chunker(p["text"]):
                 if ch["text"].strip():
-                    out.append((p["pageNumber"], ch["text"]))
+                    out.append((p["pageNumber"], ch))
     else:
         for ch in chunker(content.get("text", "")):
             if ch["text"].strip():
-                out.append((None, ch["text"]))
+                out.append((None, ch))
     return out
 
 
-def build_payloads(doc: Dict[str, Any], tenant_id: str, chunker) -> List[Tuple[str, Dict[str, Any]]]:
-    """[(point_id, payload)] for every chunk of the document."""
+FIELDS_PER_CHUNK = 40
+ROWS_PER_CHUNK   = 20
+
+
+def _cell(v: Any) -> str:
+    s = v if isinstance(v, str) else json.dumps(v, ensure_ascii=False, default=str)
+    return s.replace("|", "/").replace("\n", " ")[:FIELD_VALUE_MAX]
+
+
+def structured_chunks(content: Dict[str, Any], doc_type: Optional[str]) -> List[Tuple[str, str]]:
+    """[(chunk_kind, text)] for the reviewed fields and tables.
+
+    Extracted fields and tables are the most precise part of a finalized
+    document, and plain text chunking dilutes them across arbitrary windows.
+    Here each group of fields, and each block of table rows (with its header
+    repeated), becomes a self-contained chunk that retrieval can hit directly.
+    """
+    out: List[Tuple[str, str]] = []
+    label = f" ({doc_type})" if doc_type else ""
+    fields = [f for f in (content.get("fields") or []) if isinstance(f, dict) and isinstance(f.get("name"), str)]
+    for i in range(0, len(fields), FIELDS_PER_CHUNK):
+        lines = [f"{f['name']}: {_cell(f.get('value'))}" for f in fields[i:i + FIELDS_PER_CHUNK]]
+        out.append(("fields", f"Document fields{label}:\n" + "\n".join(lines)))
+    for ti, t in enumerate(content.get("tables") or []):
+        if not isinstance(t, dict):
+            continue
+        cols = [_cell(c) for c in (t.get("columns") or [])]
+        rows = [r for r in (t.get("rows") or []) if isinstance(r, list)]
+        name = t.get("name") or f"Table {ti + 1}"
+        head = f"{name}{label}\n| " + " | ".join(cols) + " |"
+        for ri in range(0, max(len(rows), 1), ROWS_PER_CHUNK):
+            body = ["| " + " | ".join(_cell(c) for c in r) + " |" for r in rows[ri:ri + ROWS_PER_CHUNK]]
+            out.append(("table", head + ("\n" + "\n".join(body) if body else "")))
+    return out
+
+
+def build_payloads(doc: Dict[str, Any], tenant_id: str, chunker,
+                   structured: bool = False, chunker_name: Optional[str] = None
+                   ) -> List[Tuple[str, Dict[str, Any]]]:
+    """[(point_id, payload)] for every chunk of the document.
+
+    `structured=True` appends field and table chunks (see structured_chunks)
+    after the text chunks; `chunk_kind` tells them apart.
+    """
     content = doc["content"]
     cls     = doc.get("classification") or {}
     source  = doc.get("source") or {}
     fields  = compact_fields(content.get("fields") or [])
+    items: List[Tuple[Optional[int], str, Dict[str, Any]]] = [
+        (page_num, "text", ch) for page_num, ch in chunk_document(content, chunker)
+    ]
+    if structured:
+        items += [(None, kind, {"text": text}) for kind, text in structured_chunks(content, cls.get("docType"))]
     out: List[Tuple[str, Dict[str, Any]]] = []
-    for ci, (page_num, text) in enumerate(chunk_document(content, chunker)):
+    for ci, (page_num, kind, ch) in enumerate(items):
         payload: Dict[str, Any] = {
-            "text":                  text,
+            "text":                  ch["text"],
             "doc_id":                doc["documentId"],
             "finalized_document_id": doc["finalizedDocumentId"],
             "version":               doc["version"],
@@ -154,10 +205,15 @@ def build_payloads(doc: Dict[str, Any], tenant_id: str, chunker) -> List[Tuple[s
             "gxp":                   cls.get("gxp"),
             "region":                cls.get("region"),
             "chunk_index":           ci,
+            "chunk_kind":            kind,
             "source_sha256":         source.get("sha256"),
             "content_sha256":        doc["contentSha256"],
             "fields":                fields,
         }
+        if chunker_name:
+            payload["chunker"] = chunker_name
+        if isinstance(ch.get("window_text"), str):
+            payload["window_text"] = ch["window_text"]
         if page_num is not None:
             payload["page_num"] = page_num
         out.append((point_id(tenant_id, doc["finalizedDocumentId"], doc["version"], ci), payload))
