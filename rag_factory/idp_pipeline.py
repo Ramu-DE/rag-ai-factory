@@ -193,7 +193,7 @@ class IDPPipeline:
 
         # PyMuPDF extraction — process original file directly
         if self.force_reindex:
-            proc.reset_index(self.collection_name)
+            proc.reset_index(self.collection_name, doc_id=doc_id, tenant_id=self.tenant_id)
 
         return proc.process(
             pdf_path=file_path,
@@ -209,8 +209,9 @@ class IDPPipeline:
         Writes a temporary text file and re-uses the incremental processor logic.
         """
         import time as _time
-        from .components.base import embed, get_qdrant_client, chunk_id
-        from .pdf_processor import _page_hash, _chunk_page, _ensure_collection, _load_index, _save_index, _index_path, _delete_chunks_by_ids, ProcessingReport
+        from .components.base import embed, get_qdrant_client
+        from .pdf_processor import (_page_hash, _chunk_page, _ensure_collection, _load_index,
+                                    _save_index, _delete_chunks_by_ids, _doc_scope, _chunk_id)
         from qdrant_client.models import PointStruct
 
         t0     = _time.time()
@@ -219,9 +220,12 @@ class IDPPipeline:
         cname  = self.collection_name
 
         if self.force_reindex:
-            proc.reset_index(cname)
+            proc.reset_index(cname, doc_id=fname, tenant_id=self.tenant_id)
 
-        index      = _load_index(self.index_dir, cname)
+        # Index is per (collection, document[, tenant]) so other documents in
+        # the same collection are never classified as UPDATED/DELETED here.
+        index      = _load_index(self.index_dir, cname, fname, self.tenant_id)
+        scope_id   = _doc_scope(fname, self.tenant_id)
         was_indexed = bool(index.get("pages"))
         old_pages  = index.get("pages", {})
 
@@ -254,8 +258,7 @@ class IDPPipeline:
             points, chunk_ids = [], []
 
             for ci, chunk_text in enumerate(raw_chunks):
-                from .pdf_processor import _chunk_id
-                cid = _chunk_id(cname, fname, page.page_num, ci, chunk_text)
+                cid = _chunk_id(cname, scope_id, page.page_num, ci, chunk_text)
                 vec = embed(chunk_text)
                 payload = {
                     "text":       chunk_text,
@@ -284,10 +287,8 @@ class IDPPipeline:
                 index["pages"].pop(k, None)
                 deleted_count += 1
 
-        index["doc_id"]      = fname
-        index["collection"]  = cname
         index["total_pages"] = len(extracted.pages)
-        _save_index(self.index_dir, cname, index)
+        _save_index(self.index_dir, cname, index, fname, self.tenant_id)
 
         from .pdf_processor import ProcessingReport
         return ProcessingReport(

@@ -14,10 +14,11 @@ Processing flow per upload:
   7. Chunk + embed + upsert ADDED / UPDATED pages
   8. Persist updated hash index
 
-Hash index schema (per collection):
+Hash index schema (one file per collection + document [+ tenant]):
   {
     "doc_id":         "medicaid_2024.pdf",
     "collection":     "pdf_medicaid",
+    "tenant_id":      null,
     "total_pages":    12,
     "last_processed": "2026-07-18T10:30:00",
     "pages": {
@@ -140,25 +141,83 @@ def _chunk_page(text: str, chunk_size: int = 400, overlap: int = 50) -> List[str
 
 
 # ─── hash index persistence ───────────────────────────────────────────────────
-def _index_path(base_dir: str, collection: str) -> str:
-    os.makedirs(base_dir, exist_ok=True)
+# One index file per (collection, document[, tenant]):
+#   <index_dir>/<collection>__<sha256(scope)[:16]>_index.json
+# where scope = doc_id, or "<tenant_id>/<doc_id>" when a tenant is given.
+# Keying by document (not just collection) means a second document in the
+# same collection is never mistaken for an update of the first one.
+# The legacy per-collection file <collection>_index.json is migrated on first
+# use by the document it describes and is otherwise ignored.
+def _doc_scope(doc_id: str, tenant_id: Optional[str] = None) -> str:
+    return f"{tenant_id}/{doc_id}" if tenant_id else doc_id
+
+
+def _doc_key(doc_id: str, tenant_id: Optional[str] = None) -> str:
+    return hashlib.sha256(_doc_scope(doc_id, tenant_id).encode("utf-8")).hexdigest()[:16]
+
+
+def _legacy_index_path(base_dir: str, collection: str) -> str:
     return os.path.join(base_dir, f"{collection}_index.json")
 
 
-def _load_index(base_dir: str, collection: str) -> Dict[str, Any]:
-    path = _index_path(base_dir, collection)
-    if os.path.isfile(path):
+def _index_path(base_dir: str, collection: str, doc_id: str,
+                tenant_id: Optional[str] = None) -> str:
+    os.makedirs(base_dir, exist_ok=True)
+    return os.path.join(base_dir, f"{collection}__{_doc_key(doc_id, tenant_id)}_index.json")
+
+
+def _read_json(path: str) -> Optional[Dict[str, Any]]:
+    try:
         with open(path, encoding="utf-8") as f:
             return json.load(f)
-    return {"collection": collection, "pages": {}}
+    except (OSError, ValueError):
+        return None
 
 
-def _save_index(base_dir: str, collection: str, index: Dict[str, Any]) -> None:
+def _load_index(base_dir: str, collection: str, doc_id: str,
+                tenant_id: Optional[str] = None) -> Dict[str, Any]:
+    path = _index_path(base_dir, collection, doc_id, tenant_id)
+    index = _read_json(path) if os.path.isfile(path) else None
+    if index is not None:
+        return index
+    # One-time migration of the legacy per-collection index, but only for
+    # the document it actually described.
+    legacy_path = _legacy_index_path(base_dir, collection)
+    legacy = _read_json(legacy_path) if os.path.isfile(legacy_path) else None
+    if legacy and not tenant_id and legacy.get("doc_id") == doc_id:
+        return legacy
+    return {"collection": collection, "doc_id": doc_id, "tenant_id": tenant_id, "pages": {}}
+
+
+def _save_index(base_dir: str, collection: str, index: Dict[str, Any],
+                doc_id: str, tenant_id: Optional[str] = None) -> None:
     import datetime
     index["last_processed"] = datetime.datetime.utcnow().isoformat()
-    path = _index_path(base_dir, collection)
+    index["collection"] = collection
+    index["doc_id"]     = doc_id
+    index["tenant_id"]  = tenant_id
+    path = _index_path(base_dir, collection, doc_id, tenant_id)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(index, f, indent=2)
+    legacy_path = _legacy_index_path(base_dir, collection)
+    if not tenant_id and os.path.isfile(legacy_path):
+        legacy = _read_json(legacy_path)
+        if legacy and legacy.get("doc_id") == doc_id:
+            os.remove(legacy_path)  # migrated
+
+
+def _collection_index_paths(base_dir: str, collection: str) -> List[str]:
+    """All per-document index files belonging to `collection`."""
+    import glob
+    paths = []
+    for p in glob.glob(os.path.join(glob.escape(base_dir), f"{glob.escape(collection)}__*_index.json")):
+        data = _read_json(p)
+        if data is not None and data.get("collection") == collection:
+            paths.append(p)
+    legacy = _legacy_index_path(base_dir, collection)
+    if os.path.isfile(legacy):
+        paths.append(legacy)
+    return sorted(paths)
 
 
 # ─── Qdrant helpers ───────────────────────────────────────────────────────────
@@ -188,7 +247,8 @@ class IncrementalPDFProcessor:
     """
     Processes a PDF file incrementally.
     Re-embeds only pages whose content changed since the last run.
-    Stores a per-collection hash index in `index_dir`.
+    Stores one hash index per (collection, doc_id[, tenant_id]) in `index_dir`,
+    so documents sharing a collection never affect each other's pages.
     """
 
     def __init__(self, index_dir: str = ".index", chunk_size: int = 400, overlap: int = 50):
@@ -216,7 +276,8 @@ class IncrementalPDFProcessor:
         pages = extract_pages(pdf_path)
 
         # ── 2. Load index ───────────────────────────────────────────────────
-        index       = _load_index(self.index_dir, collection_name)
+        index       = _load_index(self.index_dir, collection_name, doc_id, tenant_id)
+        scope_id    = _doc_scope(doc_id, tenant_id)
         was_indexed = bool(index.get("pages"))
         old_pages   = index.get("pages", {})
 
@@ -267,7 +328,7 @@ class IncrementalPDFProcessor:
             chunk_ids  = []
 
             for ci, chunk_text in enumerate(raw_chunks):
-                cid = _chunk_id(collection_name, doc_id, rec.page_num, ci, chunk_text)
+                cid = _chunk_id(collection_name, scope_id, rec.page_num, ci, chunk_text)
                 vec = embed(chunk_text)
                 payload: Dict[str, Any] = {
                     "text":        chunk_text,
@@ -294,10 +355,8 @@ class IncrementalPDFProcessor:
             total_embedded += len(points)
 
         # ── 6. Update index metadata ─────────────────────────────────────────
-        index["doc_id"]       = doc_id
-        index["collection"]   = collection_name
         index["total_pages"]  = len(pages)
-        _save_index(self.index_dir, collection_name, index)
+        _save_index(self.index_dir, collection_name, index, doc_id, tenant_id)
 
         elapsed = int((time.time() - t0) * 1000)
 
@@ -316,21 +375,57 @@ class IncrementalPDFProcessor:
             incremental     = was_indexed,
         )
 
-    def get_index_stats(self, collection_name: str) -> Dict[str, Any]:
-        """Return index metadata for a collection without processing."""
-        index = _load_index(self.index_dir, collection_name)
-        pages = index.get("pages", {})
+    def get_index_stats(self, collection_name: str, doc_id: Optional[str] = None,
+                        tenant_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Return index metadata without processing.
+
+        With `doc_id`: stats for that single document.
+        Without: aggregate over every document indexed in the collection
+        (restricted to `tenant_id` when given). `doc_id` in the result is set
+        only when exactly one document is indexed; `doc_ids` lists them all.
+        """
+        if doc_id is not None:
+            indexes = [_load_index(self.index_dir, collection_name, doc_id, tenant_id)]
+            indexes = [i for i in indexes if i.get("pages")]
+        else:
+            indexes = [i for i in (_read_json(p) for p in
+                                   _collection_index_paths(self.index_dir, collection_name))
+                       if i is not None]
+            if tenant_id is not None:
+                indexes = [i for i in indexes if i.get("tenant_id") == tenant_id]
+        doc_ids = [i.get("doc_id") for i in indexes]
+        pages   = [p for i in indexes for p in i.get("pages", {}).values()]
+        last    = [i["last_processed"] for i in indexes if i.get("last_processed")]
         return {
             "collection":      collection_name,
-            "doc_id":          index.get("doc_id"),
-            "total_pages":     index.get("total_pages", 0),
+            "doc_id":          doc_ids[0] if len(doc_ids) == 1 else doc_id,
+            "doc_ids":         doc_ids,
+            "documents":       len(indexes),
+            "total_pages":     sum(i.get("total_pages", 0) for i in indexes),
             "indexed_pages":   len(pages),
-            "total_chunks":    sum(len(p.get("chunk_ids", [])) for p in pages.values()),
-            "last_processed":  index.get("last_processed"),
+            "total_chunks":    sum(len(p.get("chunk_ids", [])) for p in pages),
+            "last_processed":  max(last) if last else None,
         }
 
-    def reset_index(self, collection_name: str) -> None:
-        """Force full re-processing on next run by deleting the hash index."""
-        path = _index_path(self.index_dir, collection_name)
-        if os.path.isfile(path):
-            os.remove(path)
+    def reset_index(self, collection_name: str, doc_id: Optional[str] = None,
+                    tenant_id: Optional[str] = None) -> None:
+        """
+        Force full re-processing on next run by deleting hash index file(s):
+        only that document's when `doc_id` is given, else every document's
+        in the collection (restricted to `tenant_id` when given).
+        Qdrant points are not touched.
+        """
+        if doc_id is not None:
+            paths = [_index_path(self.index_dir, collection_name, doc_id, tenant_id)]
+            legacy = _legacy_index_path(self.index_dir, collection_name)
+            data = _read_json(legacy) if os.path.isfile(legacy) else None
+            if data and not tenant_id and data.get("doc_id") == doc_id:
+                paths.append(legacy)
+        else:
+            paths = _collection_index_paths(self.index_dir, collection_name)
+            if tenant_id is not None:
+                paths = [p for p in paths if (_read_json(p) or {}).get("tenant_id") == tenant_id]
+        for path in paths:
+            if os.path.isfile(path):
+                os.remove(path)
