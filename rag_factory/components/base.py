@@ -10,13 +10,15 @@ Each subclass:
 The assembler calls run(ctx) and merges the returned dict back into ctx.
 """
 from __future__ import annotations
-import os, json, hashlib, uuid
+import os, json, hashlib, logging, uuid
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 import boto3
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
+
+_log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Shared AWS / Qdrant helpers
@@ -48,8 +50,18 @@ def get_qdrant_client():
     key = os.getenv("QDRANT_API_KEY", "")
     if url and key:
         _QDRANT_SINGLETON = QdrantClient(url=url, api_key=key, timeout=30)
-    else:
+    elif os.getenv("RAG_FACTORY_ALLOW_MEMORY", "") == "1":
+        _log.warning(
+            "QDRANT_URL/QDRANT_API_KEY not set; using an in-memory Qdrant "
+            "(RAG_FACTORY_ALLOW_MEMORY=1). Data is NOT persisted."
+        )
         _QDRANT_SINGLETON = QdrantClient(":memory:")
+    else:
+        raise RuntimeError(
+            "Qdrant is not configured: set QDRANT_URL and QDRANT_API_KEY. "
+            "To use a throwaway in-memory store (tests/demos only) set "
+            "RAG_FACTORY_ALLOW_MEMORY=1."
+        )
     return _QDRANT_SINGLETON
 
 
